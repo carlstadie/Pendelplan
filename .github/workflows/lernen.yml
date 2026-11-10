@@ -1,0 +1,40 @@
+# Records real delays and platforms on S1 / S7 / RE1 every 30 minutes
+# and publishes them as data/delays.json for the web page.
+name: Verspaetungen lernen
+
+on:
+  schedule:
+    # every 10 min from early morning to late evening, every day (GitHub uses UTC), so the heatmap covers the whole week
+    - cron: "7,17,27,37,47,57 4-21 * * *"
+  workflow_dispatch: {}   # "Run workflow" button for a manual test
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lernen
+  cancel-in-progress: false
+
+jobs:
+  lernen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verspaetungen der letzten 90 min speichern
+        env:
+          BAHN_PUFFER_LOG: data/verspaetungen.csv
+        run: |
+          python bahn_puffer.py --lernen
+          python bahn_puffer.py --export-json data/delays.json
+          python bahn_puffer.py --statistik
+      - name: Daten committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Verspaetungsdaten aktualisiert"
+          git pull --rebase --quiet && git push
