@@ -405,6 +405,7 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
   <section class="alt">
     <h2>Spätere Verbindungen</h2>
     <div class="list" id="list"></div>
+    <pre id="debug" hidden style="white-space:pre-wrap;font-size:11px;line-height:1.35;color:var(--muted);margin:10px 0 0"></pre>
   </section>
 
   <section class="weather">
@@ -599,6 +600,8 @@ function platformIsland(p) {
 }
 function minTransfer(station, arrPlat, depPlat, prodA, prodB) {
   if (!/wannsee/i.test(station || "")) return CFG.umstieg;
+  // S7 <-> S1: you change on the same platform, whatever track number is announced
+  if (prodA === "suburban" && prodB === "suburban") return CFG.wsSame;
   const a = platformIsland(arrPlat), b = platformIsland(depPlat);
   if (!a || !b) {                                    // platform not announced (yet)
     if (prodA === "suburban" && prodB === "suburban") return CFG.wsSame;   // S7 → S1 meet on one platform
@@ -607,9 +610,11 @@ function minTransfer(station, arrPlat, depPlat, prodA, prodB) {
   if (a === b) return CFG.wsSame;
   return a === "R" || b === "R" ? CFG.wsRegio : CFG.wsTunnel;
 }
-function transferText(station, arrPlat, depPlat) {
+function transferText(station, arrPlat, depPlat, prodA, prodB) {
   if (!/wannsee/i.test(station || "")) return "";
   const a = platformIsland(arrPlat), b = platformIsland(depPlat);
+  if (prodA === "suburban" && prodB === "suburban")
+    return arrPlat && depPlat ? `Gleis ${arrPlat} → ${depPlat}, gleicher Bahnsteig` : "gleicher Bahnsteig";
   if (!a || !b) return "Gleis noch nicht angekündigt";
   return a === b ? `Gleis ${arrPlat} → ${depPlat}, gleicher Bahnsteig` : `Gleis ${arrPlat} → ${depPlat}, durch den Tunnel`;
 }
@@ -645,7 +650,7 @@ function summarize(j) {
   for (let i = 1; i < sim.length; i++) {
     const p = sim[i - 1], l = sim[i];
     l.minXfer = minTransfer(p.destination, p.arrPlatform, l.platform, p.product, l.product);
-    l.xferText = transferText(p.destination, p.arrPlatform, l.platform);
+    l.xferText = transferText(p.destination, p.arrPlatform, l.platform, p.product, l.product);
     const gap = (l.pdep - p.parr) / MIN;
     l.gap = gap;
     if (gap + 0.01 < l.minXfer) viable = false;
@@ -809,7 +814,9 @@ async function fetchWindow(startMs, endMs) {
   return demoCollect(startMs, endMs);
 }
 
+let dropped = [];
 function prepare(js) {
+  dropped = js.filter(s => !s.viable);
   js = js.filter(s => s.viable);   // a change faster than the walk between platforms is not a connection
   js.sort((a, b) => a.dep - b.dep || a.arr - b.arr);
   js.forEach(s => {
@@ -1228,7 +1235,7 @@ const mins = (a, b) => Math.round((b - a) / MIN);
 const pc = (a, b) => b ? Math.round(a / b * 100) : 0;
 const pct = p => `${Math.round(p * 100)} %`;
 const SICHER = 0.85;  // below this a connection is called "knapp"
-const MIN_OK = 0.5;   // never recommend a connection that works less than half the time
+const MIN_OK = 0.4;   // never recommend a connection that works less often than this
 const COLD = 1.0;     // one minute waiting outside counts like arriving one minute later
 const HOME = 0.5;     // one minute longer at home is worth half a minute
 const mmss = sec => { sec = Math.max(0, sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
@@ -1487,7 +1494,7 @@ function stepsLive(t) {
   t.legs.forEach((leg, i) => {
     if (i > 0) {
       const m = Math.round((L[i].dep - L[i - 1].arr) / MIN), need = xferNeed(t, i);
-      const how = transferText(t.legs[i - 1].destination, L[i - 1].arrPlatform, L[i].platform);
+      const how = transferText(t.legs[i - 1].destination, L[i - 1].arrPlatform, L[i].platform, t.legs[i - 1].product, leg.product);
       const note = m < need ? `<span class="late">so nicht zu schaffen (${need} Min Fußweg)</span>` : m < need + 2 ? `<span class="warn-t">knapp</span>` : "";
       add("wait", L[i - 1].arr, t.legs[i - 1].parr, L[i].dep, `In ${esc(nice(leg.origin))} umsteigen`, [esc(how), note].filter(Boolean).join(" · "), `${m} Min`);
     }
@@ -1797,7 +1804,20 @@ function renderAll() {
   if (t) renderTrip(t); else { renderBoardPlan(s); renderPlanCard(s, rows); }
   renderList(rows, t ? null : s, best);
 }
-function render() { renderHeader(); renderStatus(); renderLage(); renderAll(); renderWeather(); renderHistory(); renderStats(); renderModelSource(); }
+function renderDebug() {
+  const el = $("debug"); if (!el) return;
+  el.hidden = qs.get("debug") !== "1"; if (el.hidden) return;
+  const D = dirInfo(), rowsNow = visibleRows().filter(s => s.eArr);
+  const base = rowsNow.length ? Math.min(...rowsNow.map(costOf)) : 0;
+  const line = (s, tag) => {
+    const x = s.sim.slice(1).map((l, i) => { const p = s.sim[i]; return `${p.line} an Gl.${p.arrPlatform ?? "?"} (${p.product}) → ${l.line} ab Gl.${l.platform ?? "?"} (${l.product}): ${Math.round(l.gap)} Min geplant, braucht ${l.minXfer}`; }).join(" | ");
+    return `${tag} los ${hm(s.dep - D.pre * MIN)}  ${s.sim.map(l => l.line + " " + hm(l.dep)).join(" > ")}  an ${hm(s.arr + D.post * MIN)}\n   ${x || "ohne Umstieg"}\n   klappt ${s.pOnTime != null ? Math.round(s.pOnTime * 100) + " %" : "-"} · erwartet an ${s.eArr ? hm(s.eArr) : "-"} · warten ${Math.round(s.wait)} · Kosten +${s.eArr ? (costOf(s) - base).toFixed(1) : "-"} (0 = beste)`;
+  };
+  const best = bestOf(visibleRows());
+  el.textContent = "DIAGNOSE (nur mit ?debug=1)\n" + visibleRows().map(s => line(s, s === best ? "★" : " ")).join("\n")
+    + (dropped.length ? "\n\nAUSSORTIERT (Umstieg kürzer als der Fußweg):\n" + dropped.slice(0, 8).map(s => line(s, "✕")).join("\n") : "");
+}
+function render() { renderHeader(); renderStatus(); renderLage(); renderAll(); renderDebug(); renderWeather(); renderHistory(); renderStats(); renderModelSource(); }
 function renderTripArea() { renderAll(); }   // used by the trip core
 
 // ------------------------------------------------------------------ arrival planner
