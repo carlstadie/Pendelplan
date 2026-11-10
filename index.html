@@ -75,6 +75,8 @@ h3 { margin: 0; font-family: var(--dot); font-weight: 800; font-size: 14px; lett
 .brand { font-family: var(--dot); font-weight: 900; font-size: 18px; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); text-shadow: 0 0 6px var(--glow); }
 .brand span { color: var(--amber-mid); font-weight: 800; text-shadow: none; }
 @media (max-width: 430px) { .brand span { display: none; } }
+.topright { display: flex; align-items: center; gap: 10px; }
+.seg.stil button { padding: 2px 8px; font-size: 12px; }
 .clock { font-family: var(--dot); font-weight: 900; font-size: 20px; color: var(--amber); text-shadow: 0 0 6px var(--glow); }
 .dirs { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--rule-strong); border-radius: 10px; overflow: hidden; }
 .dirs button { border: 0; background: transparent; padding: 11px 8px; font-family: var(--dot); font-weight: 800; font-size: 15px; letter-spacing: .05em; text-transform: uppercase; color: var(--amber-mid); }
@@ -343,6 +345,7 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
 [data-stil="db"] .dirs button { font-family: var(--font); font-weight: 700; font-size: 15px; }
 [data-stil="db"] .dirs button[aria-selected="true"], [data-stil="db"] .seg button[aria-pressed="true"], [data-stil="db"] #trip-notify[aria-pressed="true"] { background: #FFFFFF; color: #0D2161; }
 [data-stil="db"] .btn { color: #0D2161; }
+[data-stil="db"] .btn.ghost { color: #FFFFFF; }
 [data-stil="db"] .btn.take { font-family: var(--font); font-weight: 800; font-size: 18px; box-shadow: none; }
 [data-stil="db"] .seg button { font-family: var(--font); font-weight: 700; }
 [data-stil="db"] .opt .lt, [data-stil="db"] .result .big, [data-stil="db"] .lead b, [data-stil="db"] .step .t, [data-stil="db"] .hcell b, [data-stil="db"] .lstat .pct { font-weight: 800; text-shadow: none; }
@@ -360,7 +363,7 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
 
 <div class="app">
   <header class="top">
-    <div class="topline"><span class="brand">BahnPlan <span>· Zuhause ⇄ CBF</span></span><span class="clock" id="clock">--:--</span></div>
+    <div class="topline"><span class="brand">BahnPlan <span>· Zuhause ⇄ CBF</span></span><span class="topright"><span class="seg stil" id="stil" role="group" aria-label="Aussehen"><button type="button" data-stil="db">Blau</button><button type="button" data-stil="amber">Gelb</button></span><span class="clock" id="clock">--:--</span></span></div>
     <div class="dirs" role="tablist" aria-label="Richtung">
       <button type="button" role="tab" id="d-out" aria-selected="true">Zur Arbeit</button>
       <button type="button" role="tab" id="d-back" aria-selected="false">Nach Hause</button>
@@ -469,8 +472,6 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
         <label for="s-wsTunnel">anderer S-Bahnsteig, durch den Tunnel<input type="number" id="s-wsTunnel" min="1" max="15"></label>
         <label for="s-wsRegio">S-Bahn ↔ Regionalbahn (Gleis 5/6)<input type="number" id="s-wsRegio" min="1" max="15"></label>
         <label for="s-gleisziel">Bot. Garten: Rad abstellen → Gleis<input type="number" id="s-gleisziel" min="0" max="30"></label>
-        <h4>Aussehen</h4>
-        <div class="seg" id="stil" role="group" aria-label="Aussehen" style="grid-column:1/-1"><button type="button" data-stil="amber">Anzeigetafel (amber)</button><button type="button" data-stil="db">Bahnsteig (blau)</button></div>
       </div>
       <div class="btns"><button class="btn ghost" id="s-apply" type="button">Übernehmen</button><span id="s-msg">Alles in Minuten.</span></div>
       <label for="share" class="btns">Link mit diesen Zeiten</label>
@@ -531,7 +532,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 let dirParam = (qs.get("von") || location.hash.slice(1) || "").toLowerCase();
 let dir = dirParam === "charite" ? "back" : ["golm", "zuhause", "home"].includes(dirParam) ? "out" : (berlinHour() < 12 ? "out" : "back");
 const forceDemo = qs.get("demo") === "1";
-const DEFAULT_STIL = "amber";
+const DEFAULT_STIL = "db";
 let stil = qs.get("stil") || store.get("gc-stil", DEFAULT_STIL);
 function applyStil() {
   document.documentElement.dataset.stil = stil;
@@ -1340,7 +1341,7 @@ function stepsFor(s) {
   s.sim.forEach((l, i) => {
     if (i > 0) {
       const p = s.sim[i - 1], w = mins(p.arr, l.dep), spare = w - (l.minXfer ?? 0);
-      const extra = spare < 1 ? " · keine Minute Luft" : spare <= 2 ? ` · ${spare} Min Luft` : "";
+      const extra = spare < 1 ? " · knapp" : "";
       add("wait", p.arr, `In ${esc(nice(p.destination))} umsteigen`, `${esc(l.xferText || "")}${extra}`, `${w} Min`);
     }
     const late = l.delayMin != null && l.delayMin >= 1 ? ` <span class="late">+${Math.round(l.delayMin)}</span>` : "";
@@ -1352,7 +1353,7 @@ function stepsFor(s) {
     add("hbf", last.arr, "Am Hauptbahnhof", "runter vom Gleis, Rad holen, Ampeln", hbfRange());
     add("bike", last.arr + hi * MIN, "Mit dem Rad nach Hause", "", `${CFG.rad} Min`);
   }
-  add("end", s.arr + D.post * MIN, `<b>${esc(D.toLabel)}</b>`, s.q50 ? `meistens schon ${hm(s.q50)}, fast immer bis ${hm(s.q95)}` : "", "");
+  add("end", s.arr + D.post * MIN, `<b>${esc(D.toLabel)}</b>`, s.q50 ? `meist ${hm(s.q50)}, spätestens ${hm(s.q95)}` : "", "");
   return st;
 }
 const stepsHTML = st => st.map(x => `<li class="step ${x.cls} ${x.state || ""}" ${x.color ? `style="--c:${x.color}"` : ""}>
@@ -1364,12 +1365,12 @@ function renderPlanCard(s, rows) {
   if (!s) { $("lead").textContent = state.loading ? "Ich schau nach Verbindungen …" : "In den nächsten zweieinhalb Stunden fährt nichts Passendes."; ["colder", "steps", "facts", "wx-main"].forEach(id => $(id).innerHTML = ""); $("take").hidden = true; return; }
   $("take").hidden = false;
   $("lead").innerHTML = dir === "out"
-    ? `Bei grüner Welle am Hauptbahnhof reicht es auch, um <b>${hm(s.dep - D.preBest * MIN)}</b> loszufahren.`
-    : `Bei grüner Welle bist du schon um <b>${hm(s.arr + D.postBest * MIN)}</b> zu Hause.`;
+    ? `Bei grüner Welle reicht <b>${hm(s.dep - D.preBest * MIN)}</b>.`
+    : `Bei grüner Welle zuhause um <b>${hm(s.arr + D.postBest * MIN)}</b>.`;
   const w = warmerOf(s, rows), sf = !w ? saferOf(s, rows) : null;
   $("colder").innerHTML = w
-    ? `<p class="colder"><span>Weniger frieren: ${mins(s.dep, w.dep)} Min später los, dann nur ${Math.round(w.wait)} statt ${Math.round(s.wait)} Min Warten beim Umsteigen. Klappt zu ${pct(w.pOnTime)}.</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>`
-    : sf ? `<p class="colder"><span>Auf Nummer sicher: ${mins(sf.dep, s.dep)} Min früher los, dann ${Math.round(sf.wait)} Min Warten beim Umsteigen, klappt aber zu ${pct(sf.pOnTime)}.</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>` : "";
+    ? `<p class="colder"><span>Kürzer warten: ${hm(w.dep - D.pre * MIN)} los, ${Math.round(w.wait)} Min Umstieg, klappt zu ${pct(w.pOnTime)}</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>`
+    : sf ? `<p class="colder"><span>Sicherer: ${hm(sf.dep - D.pre * MIN)} los, ${Math.round(sf.wait)} Min Umstieg, klappt zu ${pct(sf.pOnTime)}</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>` : "";
   if (w || sf) $("warmer").addEventListener("click", () => { selKey = (w || sf).key; picked = true; renderAll(); });
   $("steps").innerHTML = stepsHTML(stepsFor(s));
   const facts = [], meas = measuredFor(s);
@@ -1378,7 +1379,6 @@ function renderPlanCard(s, rows) {
   else if (s.margin >= 3) facts.push(`<span class="fact ok">Entspannt umsteigen</span>`);
   else facts.push(`<span class="fact warn">Knapper Umstieg</span>`);
   facts.push(meas ? `<span class="fact">Hat bisher ${meas.ok} von ${meas.n} Mal geklappt</span>` : `<span class="fact">Klappt zu ${pct(s.pOnTime)}</span>`);
-  facts.push(`<span class="fact">${s.planb == null ? "Danach kommt heute nichts mehr" : s.planb <= s.arr + MIN ? "Fällt was aus, bist du mit dem nächsten Zug genauso schnell da" : `Fällt was aus, bist du ${mins(s.arr, s.planb)} Min später da`}</span>`);
   $("facts").innerHTML = facts.join("");
   const warns = [...new Set(rows.flatMap(r => r.warns))].slice(0, 2);
   $("notice").hidden = !warns.length; $("notice").textContent = warns.join(" · ");
@@ -1391,7 +1391,7 @@ function renderList(rows, sel, best) {
   box.innerHTML = rows.map(s => {
     const leave = s.dep - D.pre * MIN, xs = s.sim.length > 1 ? nice(s.sim[0].destination) : "";
     const note = s.cancelled ? `<span class="note late">Ein Zug fällt aus</span>`
-      : xs ? `<span class="note"><b>${Math.round(s.wait)} Min</b> warten in ${esc(xs)}${s === best ? " · meine Empfehlung" : ""}</span>` : `<span class="note">ohne Umsteigen</span>`;
+      : xs ? `<span class="note"><b>${Math.round(s.wait)} Min</b> warten in ${esc(xs)}${s === best ? " · empfohlen" : ""}</span>` : `<span class="note">ohne Umsteigen</span>`;
     return `<button type="button" class="opt ${s.cancelled ? "x" : ""}" data-key="${esc(s.key)}" aria-current="${sel && sel.key === s.key}">
       <span><span class="lt">${hm(leave)}</span><span class="in">${s.cancelled ? "" : inTxt(leave - now)}</span></span>
       <span class="mid"><span class="lines">${s.sim.map(l => `<span class="leg">${lnHTML(l)}<span class="n">${hm(l.dep)}</span></span>`).join("")}</span>${note}</span>
