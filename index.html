@@ -120,6 +120,20 @@ h3 { margin: 0; font-family: var(--dot); font-weight: 800; font-size: 14px; lett
 .b-trains { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 16px; font-weight: 800; }
 .b-trains .chip { background: var(--led); color: var(--led-bg); padding: 0 5px; text-shadow: none; font-weight: 900; margin-right: 4px; }
 .b-status { font-size: 15px; font-weight: 800; }
+/* trip time line: one line from door to door, a vertical tick per section, the icon where you are */
+.b-track { position: relative; height: 54px; margin-top: 4px; color: var(--led); }
+.b-track .line { position: absolute; left: 0; right: 0; top: 24px; height: 2px; background: currentColor; opacity: .28; }
+.b-track .fill { position: absolute; left: 0; top: 24px; height: 2px; background: currentColor; box-shadow: 0 0 6px var(--led-glow); transition: width 1s linear; }
+.b-track .tick { position: absolute; top: 18px; width: 1.5px; height: 14px; background: currentColor; opacity: .55; transform: translateX(-.75px); }
+.b-track .tick.end { opacity: .9; width: 2px; }
+.b-track .lbl { position: absolute; top: 38px; font-size: 11px; font-weight: 700; color: var(--led-mid); text-shadow: none; white-space: nowrap; }
+.b-track .lbl.r { right: 0; }
+.b-track .veh { position: absolute; top: 3px; height: 20px; transform: translateX(-50%); transition: left 1s linear; }
+.b-track .veh svg { display: block; height: 100%; width: auto; overflow: visible; }
+/* moving point on the step you are in */
+.step .rail .prog { position: absolute; left: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: var(--amber); box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 28%, transparent), 0 0 10px var(--glow); transition: top 1s linear; z-index: 1; }
+@media (prefers-reduced-motion: reduce) { .b-track .veh, .b-track .fill, .step .rail .prog { transition: none; } }
 .b-status.lv1 { color: #FFD36B; } .b-status.lv2 { color: #FF6B4A; text-shadow: 0 0 7px rgba(255, 90, 60, .5); }
 .b-hist { margin-top: 4px; border-top: 1px solid rgba(255, 179, 31, .18); padding-top: 8px; }
 .b-hist svg { display: block; width: 100%; height: auto; }
@@ -379,6 +393,7 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
       <div class="b-main"><span class="b-lbl" id="b-lbl">Los<br>in</span><span class="b-count" id="b-count">--:--</span></div>
       <div class="b-row"><span id="b-from"></span><span id="b-to"></span></div>
       <div class="b-trains" id="b-trains"></div>
+      <div class="b-track" id="b-track" aria-hidden="true"></div>
       <div class="b-status" id="b-status" hidden></div>
       <div class="b-hist" id="b-hist"></div>
       <div class="b-histlbl" id="b-histlbl"></div>
@@ -1196,8 +1211,10 @@ function tripRisk(t) {
       if (gap < need) reasons.push({ level: 2, text: gap <= 0
         ? `Die ${t.legs[i - 1].line} kommt erst um ${hm(L[i - 1].arr)} in ${nice(leg.origin)} an, die ${leg.line} fährt schon um ${hm(x.dep)}`
         : `In ${nice(leg.origin)} bleiben nur ${Math.round(gap)} Min zum Umsteigen, du brauchst ${need}` });
-      else if (gap < need + 1) reasons.push({ level: 2, text: `In ${nice(leg.origin)} wird's sehr knapp: ${Math.round(gap)} Minuten zum Umsteigen` });
-      else if (gap < need + 2 && gap < (leg.pdep - t.legs[i - 1].parr) / MIN) reasons.push({ level: 1, text: `Umstieg in ${nice(leg.origin)} wird knapper: noch ${Math.round(gap)} Minuten` });
+      else if (gap < (leg.pdep - t.legs[i - 1].parr) / MIN - .5) {   // only warn when it got tighter than planned
+        if (gap < need + 1) reasons.push({ level: 2, text: `In ${nice(leg.origin)} wird's sehr knapp: ${Math.round(gap)} Minuten zum Umsteigen` });
+        else if (gap < need + 2) reasons.push({ level: 1, text: `Umstieg in ${nice(leg.origin)} wird knapper: noch ${Math.round(gap)} Minuten` });
+      }
     }
   });
   cond.reasons.filter(r => r.weather && r.level > 0).forEach(r => reasons.push(r));
@@ -1300,6 +1317,61 @@ function boardHist(st) {
   $("b-histlbl").innerHTML = `<span>${hm(lo * MIN)}</span><span>meist <b>${hm(st.q50)}</b> · 95 % bis <b>${hm(st.q95)}</b></span><span>${hm((lo + cols - 1) * MIN)}</span>`;
 }
 
+// ------------------------------------------------------------------ little track with a moving S-Bahn / bike
+const TRAIN_SVG = `<svg viewBox="0 0 44 18" width="44" height="18"><path d="M2 3h30c5 0 8 2 10 6l1 4c0 1-1 2-2 2H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="currentColor"/>
+  <g fill="var(--led-bg)"><rect x="4" y="5" width="5" height="4" rx=".6"/><rect x="11" y="5" width="5" height="4" rx=".6"/><rect x="18" y="5" width="5" height="4" rx=".6"/><rect x="25" y="5" width="5" height="4" rx=".6"/>
+  <path d="M33 5h2.5c2 0 3.4 1.2 4.3 4H33z"/></g><rect x="1" y="11" width="41" height="1.2" fill="var(--led-bg)" opacity=".5"/>
+  <g fill="currentColor"><circle cx="8" cy="16.6" r="1.6"/><circle cx="14" cy="16.6" r="1.6"/><circle cx="29" cy="16.6" r="1.6"/><circle cx="35" cy="16.6" r="1.6"/></g></svg>`;
+const WALK_SVG = `<svg viewBox="0 0 14 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="8" cy="2.6" r="1.9" fill="currentColor" stroke="none"/><path d="M7.5 6 6 11.5l3 2.5 1 5M6 11.5 4 19M7.5 6l3.5 2.5 1.5 3M7.5 6 4.5 8 3 11"/></svg>`;
+const BIKE_SVG = `<svg viewBox="0 0 26 18" width="26" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="5.5" cy="12.5" r="4.2"/><circle cx="20.5" cy="12.5" r="4.2"/><path d="M5.5 12.5 10 5h7l3.5 7.5M10 5l4 7.5h-8.5M14.5 3.2h3M17 5l-2.6 7.5"/></svg>`;
+
+function hideTrack() { const el = $("b-track"); if (el) { el.hidden = true; el.innerHTML = ""; } }
+// During a trip: the whole way from the door to the door, ticks at the stations, the vehicle where you are now.
+function trackModel(t) {
+  const st = stepsLive(t).filter(x => x.cls !== "end"), endStep = stepsLive(t).find(x => x.cls === "end");
+  const start = st[0]?.t, end = endStep?.t;
+  if (!start || !end || end <= start) return null;
+  const span = end - start, pct = ms => Math.max(0, Math.min(100, (ms - start) / span * 100));
+  const segs = st.map((x, i) => ({ cls: x.cls, a: x.t, b: x.t2 ?? (st[i + 1]?.t ?? end) }));
+  return { start, end, pct, segs };
+}
+function renderTrackTrip(t) {
+  const el = $("b-track"), m = trackModel(t); if (!el || !m) return;
+  el.hidden = false; el.className = "b-track trip";
+  const cuts = [...new Set(m.segs.slice(1).map(sg => m.pct(sg.a)).map(x => x.toFixed(2)))];
+  el.innerHTML = `<span class="lbl">${esc(t.from)} ${hm(m.start)}</span><span class="lbl r">${esc(t.to)} ${hm(m.end)}</span>`
+    + `<span class="line"></span><span class="fill" id="b-fill"></span>`
+    + `<span class="tick end" style="left:0"></span>` + cuts.map(x => `<span class="tick" style="left:${x}%"></span>`).join("") + `<span class="tick end" style="left:100%"></span>`
+    + `<span class="veh" id="b-veh"></span>`;
+  moveTrack(t, m);
+}
+function moveTrack(t, m) {
+  const v = $("b-veh"); if (!v) return;
+  m = m || trackModel(t); if (!m) return;
+  const now = Date.now(), cur = m.segs.find(sg => now >= sg.a && now < sg.b) || (now < m.start ? m.segs[0] : m.segs[m.segs.length - 1]);
+  const kind = !cur ? "train" : cur.cls === "bike" ? "bike" : cur.cls === "train" ? "train" : "walk";
+  if (v.dataset.kind !== kind) { v.dataset.kind = kind; v.innerHTML = kind === "bike" ? BIKE_SVG : kind === "walk" ? WALK_SVG : TRAIN_SVG; }
+  const x = m.pct(Math.max(m.start, Math.min(m.end, now))), half = kind === "train" ? 22 : kind === "bike" ? 13 : 7;
+  v.style.left = `clamp(${half}px, ${x}%, calc(100% - ${half}px))`;
+  const f = $("b-fill"); if (f) f.style.width = `${x}%`;
+}
+// the glowing point on the step you're in
+function moveStepPoint(t) {
+  const now = Date.now(), live = stepsLive(t);
+  const lis = document.querySelectorAll("#trip-steps .step");
+  live.forEach((x, i) => {
+    const li = lis[i]; if (!li) return;
+    let p = li.querySelector(".prog");
+    if (x.state === "now" && x.t2 && x.t2 > x.t) {
+      const f = Math.max(0, Math.min(1, (now - x.t) / (x.t2 - x.t)));
+      if (!p) { p = document.createElement("span"); p.className = "prog"; li.querySelector(".rail").appendChild(p); }
+      p.style.top = `calc(11px + ${f.toFixed(4)} * (100% - 11px))`;
+    } else if (p) p.remove();
+  });
+}
+
 function renderBoardPlan(s) {
   const D = dirInfo();
   $("b-kind").textContent = picked ? "Deine Wahl" : "Empfohlen";
@@ -1307,8 +1379,9 @@ function renderBoardPlan(s) {
   $("b-status").hidden = true;
   if (!s) {
     $("b-count").textContent = "--:--"; $("b-from").textContent = state.loading ? "Suche Verbindungen …" : "Nichts gefunden";
-    $("b-to").textContent = ""; $("b-trains").innerHTML = ""; $("b-hist").innerHTML = ""; $("b-histlbl").innerHTML = ""; return;
+    $("b-to").textContent = ""; $("b-trains").innerHTML = ""; $("b-hist").innerHTML = ""; $("b-histlbl").innerHTML = ""; hideTrack(); return;
   }
+  hideTrack();
   $("b-from").textContent = `${D.fromLabel} ab ${hm(s.dep - D.pre * MIN)}`;
   $("b-to").textContent = `an ${hm(s.arr + D.post * MIN)}`;
   $("b-trains").innerHTML = s.sim.map(l => `<span><span class="chip">${esc(l.line)}</span>${hm(l.dep)}${l.delayMin >= 1 ? ` +${Math.round(l.delayMin)}` : ""}${l.platform ? ` <span class="gl">Gl. ${esc(l.platform)}</span>` : ""}</span>`).join("")
@@ -1543,6 +1616,7 @@ function renderBoardTrip(t, risk) {
   bs.hidden = false; bs.className = `b-status lv${risk.level}`;
   bs.textContent = risk.level === 0 ? "Alles im Plan" : risk.level === 1 ? "Ein bisschen wackelig" : "Achtung: Plan ändert sich";
   $("b-hist").innerHTML = ""; $("b-histlbl").innerHTML = "";
+  renderTrackTrip(t);
   tickTripBoard(t);
 }
 
@@ -1556,6 +1630,7 @@ async function renderTrip(t) {
   rb.className = `risk lv${risk.level}`;
   rb.innerHTML = `<b>${risk.level === 2 ? "Achtung" : risk.level === 1 ? "Gut zu wissen" : ""}</b><ul>${risk.reasons.slice(0, 5).map(r => `<li>${esc(r.text)}</li>`).join("")}</ul>`;
   $("trip-steps").innerHTML = stepsHTML(stepsLive(t));
+  moveStepPoint(t);
   renderRides($("wx-trip"), ridesFor(t.dir, legLive(t, t.legs[0]).dep, legLive(t, t.legs[t.legs.length - 1]).arr, t.pre));
   const age = t.checked ? Math.round((Date.now() - t.checked) / 1000) : null;
   $("trip-upd").textContent = age == null ? "Hole Live-Daten …" : `Live-Daten von vor ${age < 60 ? age + " s" : Math.round(age / 60) + " Min"}`;
@@ -1899,7 +1974,11 @@ $("hist-clear").addEventListener("click", () => {
 });
 
 // ------------------------------------------------------------------ loops
-function clock() { $("clock").textContent = hm(Date.now()); tickBoard(); }
+function clock() {
+  $("clock").textContent = hm(Date.now()); tickBoard();
+  const t = activeTrip();
+  if (t && !$("tripcard").hidden) { moveTrack(t); moveStepPoint(t); }
+}
 setInterval(clock, 1000); clock();
 setInterval(() => { if (!state.loading) { renderStatus(); renderAll(); } }, 20000);
 setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 90000);
