@@ -71,17 +71,23 @@ MIN_LEARNED = 40
 
 
 # ---------------------------------------------------------------- API access
-def get(path, **params):
+class ApiError(Exception):
+    pass
+
+
+def get(path, fatal=True, **params):
     url = f"{API}{path}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers={"User-Agent": "bahn-puffer/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "bahn-puffer/1.0 (github.com/carlstadie/Pendelplan)"})
     for attempt in range(4):
         try:
             with urllib.request.urlopen(req, timeout=25) as r:
                 return json.load(r)
         except Exception as e:  # API is a community mirror and sometimes hiccups
             if attempt == 3:
-                sys.exit(f"API-Fehler bei {path}: {e}")
-            time.sleep(2 * (attempt + 1))
+                if fatal:
+                    sys.exit(f"API-Fehler bei {path}: {e}")
+                raise ApiError(f"{path}: {e}")
+            time.sleep(3 * (attempt + 1))
 
 
 def find_stop(name):
@@ -393,12 +399,21 @@ def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60
     LOG.parent.mkdir(parents=True, exist_ok=True)
     _, seen = load_log()
     now = datetime.now(TZ)
-    new = []
+    new, failed = [], []
     for name in stop_names:
-        sid, sname = find_stop(name)
+        try:
+            res = get("/locations", fatal=False, query=name, poi="false", addresses="false", results=1)
+            sid, sname = res[0]["id"], res[0]["name"]
+        except (ApiError, IndexError, KeyError) as e:
+            failed.append(f"{name}: {e}")
+            continue
         for kind in ("departures", "arrivals"):
-            res = get(f"/stops/{sid}/{kind}", when=(now - mins(90)).isoformat(),
-                      duration=90, results=400, remarks="false")
+            try:
+                res = get(f"/stops/{sid}/{kind}", fatal=False, when=(now - mins(90)).isoformat(),
+                          duration=90, results=400, remarks="false")
+            except ApiError as e:  # one failing request must not lose the rest
+                failed.append(f"{sname} {kind}: {e}")
+                continue
             items = res.get(kind, []) if isinstance(res, dict) else res
             for it in items:
                 planned = parse(it.get("plannedWhen"))
@@ -433,6 +448,10 @@ def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60
         w.writeheader()
         w.writerows(rows)
     print(f"{len(new)} neue Beobachtungen, {len(rows)} insgesamt (letzte {keep_days} Tage) in {LOG}")
+    for f in failed:
+        print(f"::warning::nicht abrufbar: {f}")
+    if failed and not new:
+        sys.exit("Keine Daten bekommen, die Fahrplan-API war nicht erreichbar.")
 
 
 def _read_log():

@@ -5,7 +5,7 @@ name: Verspaetungen lernen
 on:
   schedule:
     # every 10 min from early morning to late evening, every day (GitHub uses UTC), so the heatmap covers the whole week
-    - cron: "7,17,27,37,47,57 4-21 * * *"
+    - cron: "3,13,23,33,43,53 4-21 * * *"
   workflow_dispatch: {}   # "Run workflow" button for a manual test
 
 permissions:
@@ -25,16 +25,31 @@ jobs:
         with:
           python-version: "3.12"
       - name: Verspaetungen der letzten 90 min speichern
+        id: lernen
+        continue-on-error: true
+        env:
+          BAHN_PUFFER_LOG: data/verspaetungen.csv
+        run: python bahn_puffer.py --lernen
+      - name: Fuer die Webseite aufbereiten
         env:
           BAHN_PUFFER_LOG: data/verspaetungen.csv
         run: |
-          python bahn_puffer.py --lernen
           python bahn_puffer.py --export-json data/delays.json
-          python bahn_puffer.py --statistik
+          python bahn_puffer.py --statistik || true
       - name: Daten committen
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || git commit -m "Verspaetungsdaten aktualisiert"
-          git pull --rebase --quiet && git push
+          if git diff --cached --quiet; then echo "Keine neuen Daten."; exit 0; fi
+          git commit -m "Verspaetungsdaten aktualisiert"
+          for i in 1 2 3; do
+            git pull --rebase --quiet && git push && exit 0
+            echo "Push fehlgeschlagen, neuer Versuch in 10 s"; sleep 10
+          done
+          exit 1
+      - name: Lernen fehlgeschlagen?
+        if: steps.lernen.outcome == 'failure'
+        run: |
+          echo "::error::Die Fahrplan-API hat in diesem Lauf nicht geantwortet."
+          exit 1
