@@ -360,9 +360,9 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
 
 <div class="app">
   <header class="top">
-    <div class="topline"><span class="brand">Pendeln <span>· Zuhause ⇄ Charité</span></span><span class="clock" id="clock">--:--</span></div>
+    <div class="topline"><span class="brand">BahnPlan <span>· Zuhause ⇄ CBF</span></span><span class="clock" id="clock">--:--</span></div>
     <div class="dirs" role="tablist" aria-label="Richtung">
-      <button type="button" role="tab" id="d-out" aria-selected="true">Zur Charité</button>
+      <button type="button" role="tab" id="d-out" aria-selected="true">Zur Arbeit</button>
       <button type="button" role="tab" id="d-back" aria-selected="false">Nach Hause</button>
     </div>
     <div class="status" id="status"></div>
@@ -408,9 +408,9 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
   </section>
 
   <section class="weather">
-    <h2>Wetter heute</h2>
+    <h2>Wetter</h2>
     <div class="box">
-      <div class="seg" id="wx-tabs" role="group" aria-label="Ort"><button type="button" aria-pressed="true">Zuhause / Potsdam</button><button type="button" aria-pressed="false">Steglitz</button></div>
+      <div class="seg" id="wx-tabs" role="group" aria-label="Ort"><button type="button" aria-pressed="true">Potsdam</button><button type="button" aria-pressed="false">Steglitz</button></div>
       <div class="strip" id="wx-strip"></div>
       <p class="muted" id="wx-sun"></p>
     </div>
@@ -420,7 +420,7 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
     <h2>Pünktlich da sein</h2>
     <div class="box">
       <div class="plan-in"><label for="target" id="plan-lbl">An der Charité um</label><input type="time" id="target" value="08:30"><button class="btn" id="plan-btn" type="button">Ausrechnen</button></div>
-      <div class="result" id="result"><small>Sagt dir, wann du spätestens losmusst.</small></div>
+      <div class="result" id="result"><small>Wann du spätestens los musst.</small></div>
     </div>
   </section>
 
@@ -461,9 +461,9 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
         <label for="s-rad">Zuhause → Hauptbahnhof<input type="number" id="s-rad" min="0" max="120"></label>
         <label for="s-radziel">Bot. Garten ↔ Charité<input type="number" id="s-radziel" min="0" max="60"></label>
         <h4>Am Potsdamer Hauptbahnhof (Ampeln, Rad abstellen, zum Gleis)</h4>
-        <label for="s-hbfmin">bei grüner Welle<input type="number" id="s-hbfmin" min="0" max="30"></label>
-        <label for="s-hbfmax">wenn alles rot ist<input type="number" id="s-hbfmax" min="0" max="30"></label>
-        <h4>Umsteigen in Wannsee (Laufzeit)</h4>
+        <label for="s-hbfmin">bei grüner Ampel<input type="number" id="s-hbfmin" min="0" max="30"></label>
+        <label for="s-hbfmax">bei böser Ampel<input type="number" id="s-hbfmax" min="0" max="30"></label>
+        <h4>Umsteigen in Wannsee</h4>
         <label for="s-wsSame">gleicher Bahnsteig<input type="number" id="s-wsSame" min="1" max="15"></label>
         <label for="s-wsTunnel">anderer S-Bahnsteig, durch den Tunnel<input type="number" id="s-wsTunnel" min="1" max="15"></label>
         <label for="s-wsRegio">S-Bahn ↔ Regionalbahn (Gleis 5/6)<input type="number" id="s-wsRegio" min="1" max="15"></label>
@@ -1605,7 +1605,7 @@ function renderLage() {
   const sub = lv === 0 ? "keine Probleme bei S1, S7 und RE1" : "fließt schon in die Prozente ein";
   el.innerHTML = `<details class="lage-d lv${lv}"${lv === 2 ? " open" : ""}><summary><span class="lg">${label}</span><span class="lsub">${sub}</span></summary>
     ${rs.length ? `<ul>${rs.map(r => `<li class="lv${r.level}">${esc(r.text)}</li>`).join("")}</ul>` : ""}
-    <p>Ich schaue mir an, wie pünktlich S1, S7 und RE1 in der letzten halben Stunde und der nächsten Stunde fahren, ob es Störungsmeldungen gibt und was das Wetter macht${state.demo ? " (in der Demo ausgedacht)" : ""}.</p></details>`;
+    <p>${state.demo ? " (in der Demo ausgedacht)" : ""}.</p></details>`;
 }
 
 // ------------------------------------------------------------------ statistics + heatmap
