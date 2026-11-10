@@ -395,7 +395,9 @@ def arrival_advice(js, target, reserve, puffer, pre, post, door_to, sim, levels)
 
 
 # ------------------------------------------------------------------ learning
-def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60):
+def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60, lookback=90):
+    """Store real delays of trains that already ran. lookback = minutes back from now;
+    longer spans are fetched in 60-minute pieces (e.g. 480 to catch up the last 8 hours)."""
     LOG.parent.mkdir(parents=True, exist_ok=True)
     _, seen = load_log()
     now = datetime.now(TZ)
@@ -407,12 +409,14 @@ def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60
         except (ApiError, IndexError, KeyError) as e:
             failed.append(f"{name}: {e}")
             continue
+        windows = [(b, min(60, b)) for b in range(lookback, 0, -60)]  # (minutes back, length)
         for kind in ("departures", "arrivals"):
+          for back, span in windows:
             try:
-                res = get(f"/stops/{sid}/{kind}", fatal=False, when=(now - mins(90)).isoformat(),
-                          duration=90, results=400, remarks="false")
+                res = get(f"/stops/{sid}/{kind}", fatal=False, when=(now - mins(back)).isoformat(),
+                          duration=span, results=400, remarks="false")
             except ApiError as e:  # one failing request must not lose the rest
-                failed.append(f"{sname} {kind}: {e}")
+                failed.append(f"{sname} {kind} (vor {back} min): {e}")
                 continue
             items = res.get(kind, []) if isinstance(res, dict) else res
             for it in items:
@@ -680,7 +684,8 @@ def main():
     g.add_argument("--puffer", type=int, default=6, help="Umsteigezeit, ab der eine Verbindung als sicher (*) gilt")
     g.add_argument("--umstieg", type=int, default=2, help="kuerzeste Umsteigezeit in Minuten (Fussweg zwischen den Bahnsteigen)")
     g = p.add_argument_group("Lernen")
-    g.add_argument("--lernen", action="store_true", help="echte Verspaetungen der letzten 90 min speichern")
+    g.add_argument("--lernen", action="store_true", help="echte Verspaetungen der letzten Minuten speichern")
+    g.add_argument("--zurueck", type=int, default=90, help="wie viele Minuten --lernen zurueckschaut (z. B. 480 = 8 h)")
     g.add_argument("--lern-halte", default="Potsdam Hauptbahnhof;S Wannsee;S Botanischer Garten",
                    help="Haltestellen fuers Lernen, mit ; getrennt")
     g.add_argument("--statistik", action="store_true", help="gelernte Verspaetungen anzeigen")
@@ -689,7 +694,7 @@ def main():
     a = p.parse_args()
 
     if a.lernen:
-        return learn([s.strip() for s in a.lern_halte.split(";") if s.strip()])
+        return learn([s.strip() for s in a.lern_halte.split(";") if s.strip()], lookback=max(10, a.zurueck))
     if a.statistik:
         return statistics()
     if a.export_json:

@@ -6,7 +6,12 @@ on:
   schedule:
     # every 10 min from early morning to late evening, every day (GitHub uses UTC), so the heatmap covers the whole week
     - cron: "3,13,23,33,43,53 4-21 * * *"
-  workflow_dispatch: {}   # "Run workflow" button for a manual test
+  workflow_dispatch:      # "Run workflow" button, e.g. to catch up on the last hours once
+    inputs:
+      zurueck:
+        description: "Wie viele Minuten zurück (90 normal, 480 = letzte 8 Stunden)"
+        required: false
+        default: "90"
 
 permissions:
   contents: write
@@ -29,7 +34,8 @@ jobs:
         continue-on-error: true
         env:
           BAHN_PUFFER_LOG: data/verspaetungen.csv
-        run: python bahn_puffer.py --lernen
+          ZURUECK: ${{ github.event.inputs.zurueck || '90' }}
+        run: python bahn_puffer.py --lernen --zurueck "$ZURUECK"
       - name: Fuer die Webseite aufbereiten
         env:
           BAHN_PUFFER_LOG: data/verspaetungen.csv
