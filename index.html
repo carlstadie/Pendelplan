@@ -597,17 +597,20 @@ function platformIsland(p) {
   const n = parseInt(String(p || "").replace(/\D/g, ""), 10);
   return !n ? null : n <= 2 ? "S12" : n <= 4 ? "S34" : "R";
 }
-function minTransfer(station, arrPlat, depPlat) {
+function minTransfer(station, arrPlat, depPlat, prodA, prodB) {
   if (!/wannsee/i.test(station || "")) return CFG.umstieg;
   const a = platformIsland(arrPlat), b = platformIsland(depPlat);
-  if (!a || !b) return CFG.wsTunnel;                 // unknown platform: assume the tunnel
+  if (!a || !b) {                                    // platform not announced (yet)
+    if (prodA === "suburban" && prodB === "suburban") return CFG.wsSame;   // S7 → S1 meet on one platform
+    return prodA === "regional" || prodB === "regional" ? CFG.wsRegio : CFG.wsTunnel;
+  }
   if (a === b) return CFG.wsSame;
   return a === "R" || b === "R" ? CFG.wsRegio : CFG.wsTunnel;
 }
 function transferText(station, arrPlat, depPlat) {
   if (!/wannsee/i.test(station || "")) return "";
   const a = platformIsland(arrPlat), b = platformIsland(depPlat);
-  if (!a || !b) return "Gleis noch unbekannt";
+  if (!a || !b) return "Gleis noch nicht angekündigt";
   return a === b ? `Gleis ${arrPlat} → ${depPlat}, gleicher Bahnsteig` : `Gleis ${arrPlat} → ${depPlat}, durch den Tunnel`;
 }
 
@@ -641,7 +644,7 @@ function summarize(j) {
   let viable = true, wait = 0;
   for (let i = 1; i < sim.length; i++) {
     const p = sim[i - 1], l = sim[i];
-    l.minXfer = minTransfer(p.destination, p.arrPlatform, l.platform);
+    l.minXfer = minTransfer(p.destination, p.arrPlatform, l.platform, p.product, l.product);
     l.xferText = transferText(p.destination, p.arrPlatform, l.platform);
     const gap = (l.pdep - p.parr) / MIN;
     l.gap = gap;
@@ -731,7 +734,7 @@ function demoCollect(startMs, endMs) {
 // ------------------------------------------------------------------ delay model + simulation
 function drawDelay(r, leg, now) {
   const mins = leg.dep != null ? (leg.dep - now) / MIN : 999;
-  if (leg.realtime && mins >= -5 && mins <= 20) return [r() < .003, Math.max(-.5, gauss(r, 0, 1))];
+  if (leg.realtime && mins >= -5 && mins <= 20) return [r() < .003, r() < .85 ? 0 : 1];   // live data is known; small drift
   const k = riskMult[leg.line] ?? riskMult["*"] ?? 1;   // > 1 when the line is disrupted right now / bad weather
   const L = delayData?.linien?.[leg.line];
   if (L && L.n >= MIN_LEARNED && L.delays?.length) {
@@ -741,7 +744,7 @@ function drawDelay(r, leg, now) {
   const p = PRIORS[leg.product] || PRIORS.suburban;
   if (r() < Math.min(.5, p.cancel * k)) return [true, 0];
   if (r() < Math.min(.9, p.tail * k)) return [false, -Math.log(1 - r()) * p.mean * k];
-  return [false, -.5 + r() * 1.5];
+  return [false, r() < .8 ? 0 : 1];
 }
 
 class Sim {
@@ -831,6 +834,9 @@ async function refresh() {
     // chance that this connection works: you catch every train and arrive with it,
     // not with the next one (allowing a few minutes of normal delay)
     s.pOnTime = sim ? sim.pBy(leave, s.arr + D.post * MIN + 8 * MIN) : 0;
+    // expected door arrival, a missed connection counted with the later arrival it causes
+    const runs = sim ? sim.run(leave).arr : [];
+    s.eArr = runs.length ? runs.reduce((a, v) => a + (Number.isFinite(v) ? v : s.arr + D.post * MIN + 40 * MIN), 0) / runs.length : s.arr + D.post * MIN;
   });
   state = { ...state, js, sim, fetchedAt: Date.now(), loading: false, windowEnd: end };
   render();
@@ -1076,7 +1082,7 @@ function startTrip(s) {
 // minimum change time for leg i of a trip, from the live (or planned) platforms
 function xferNeed(t, i) {
   const a = legLive(t, t.legs[i - 1]), b = legLive(t, t.legs[i]);
-  return minTransfer(t.legs[i - 1].destination, a.arrPlatform, b.platform);
+  return minTransfer(t.legs[i - 1].destination, a.arrPlatform, b.platform, t.legs[i - 1].product, t.legs[i].product);
 }
 
 function legLive(t, leg) {
@@ -1221,7 +1227,10 @@ const lnHTML = l => `<span class="ln" style="background:${lineColor(l.line, l.pr
 const mins = (a, b) => Math.round((b - a) / MIN);
 const pc = (a, b) => b ? Math.round(a / b * 100) : 0;
 const pct = p => `${Math.round(p * 100)} %`;
-const SICHER = 0.9;   // a connection should work at least this often to be recommended
+const SICHER = 0.85;  // below this a connection is called "knapp"
+const MIN_OK = 0.5;   // never recommend a connection that works less than half the time
+const COLD = 1.0;     // one minute waiting outside counts like arriving one minute later
+const HOME = 0.5;     // one minute longer at home is worth half a minute
 const mmss = sec => { sec = Math.max(0, sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
   return h ? `${h}:${String(m).padStart(2, "0")}h` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; };
 const inTxt = ms => { const m = Math.ceil(ms / MIN); return m <= 0 ? "jetzt" : m < 100 ? `in ${m} Min` : `in ${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")} h`; };
@@ -1235,17 +1244,27 @@ function visibleRows() {
   const D = dirInfo(), now = Date.now();
   return state.js.filter(s => s.dep - D.preBest * MIN >= now - MIN && s.dep <= (state.windowEnd || Infinity)).slice(0, 8);
 }
+// Best = lowest "cost": expected arrival + minutes waiting in the cold − half the extra minutes at home.
+// So a short change that usually works beats a long cold wait for the same train.
+function costOf(s) { return (s.eArr ?? s.arr) / MIN + COLD * s.wait - HOME * s.dep / MIN; }
 function bestOf(rows) {
   const D = dirInfo(), now = Date.now();
-  const can = rows.filter(s => !s.cancelled && s.dep - D.pre * MIN >= now);
-  const ok = can.filter(s => s.pOnTime >= SICHER);
-  if (!ok.length) return can.slice(0, 4).sort((a, b) => b.pOnTime - a.pOnTime)[0] || rows.find(s => !s.cancelled) || rows[0];
-  return ok.slice().sort((a, b) => (a.arr - b.arr) || (a.wait - b.wait) || (b.dep - a.dep))[0];
+  const can = rows.filter(s => !s.cancelled && s.dep - D.pre * MIN >= now).slice(0, 6);
+  const ok = can.filter(s => s.pOnTime >= MIN_OK);
+  const pool = ok.length ? ok : can;
+  if (!pool.length) return rows.find(s => !s.cancelled) || rows[0];
+  return pool.slice().sort((a, b) => (costOf(a) - costOf(b)) || (b.dep - a.dep))[0];
 }
 function warmerOf(s, rows) {
   // same arrival, clearly shorter wait, still reasonably likely to work
   return rows.filter(o => o !== s && !o.cancelled && Math.abs(o.arr - s.arr) <= MIN && o.wait <= s.wait - 4 && o.pOnTime >= .7)
     .sort((a, b) => b.pOnTime - a.pOnTime)[0] || null;
+}
+function saferOf(s, rows) {
+  // same arrival, leaves earlier, works clearly more often
+  if (s.pOnTime >= SICHER) return null;
+  return rows.filter(o => o !== s && !o.cancelled && Math.abs(o.arr - s.arr) <= MIN && o.dep < s.dep && o.pOnTime >= SICHER && o.pOnTime >= s.pOnTime + .1)
+    .sort((a, b) => b.dep - a.dep)[0] || null;
 }
 function selected(rows) {
   let s = picked ? rows.find(r => r.key === selKey) : null;
@@ -1340,9 +1359,11 @@ function renderPlanCard(s, rows) {
   $("lead").innerHTML = dir === "out"
     ? `Bei grüner Welle am Hauptbahnhof reicht es auch, um <b>${hm(s.dep - D.preBest * MIN)}</b> loszufahren.`
     : `Bei grüner Welle bist du schon um <b>${hm(s.arr + D.postBest * MIN)}</b> zu Hause.`;
-  const w = !picked ? warmerOf(s, rows) : null;
-  $("colder").innerHTML = w ? `<p class="colder"><span>Weniger frieren: ${mins(s.dep, w.dep)} Min später los, dann nur ${Math.round(w.wait)} statt ${Math.round(s.wait)} Min Warten beim Umsteigen. Klappt aber nur zu ${pct(w.pOnTime)}.</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>` : "";
-  if (w) $("warmer").addEventListener("click", () => { selKey = w.key; picked = true; renderAll(); });
+  const w = warmerOf(s, rows), sf = !w ? saferOf(s, rows) : null;
+  $("colder").innerHTML = w
+    ? `<p class="colder"><span>Weniger frieren: ${mins(s.dep, w.dep)} Min später los, dann nur ${Math.round(w.wait)} statt ${Math.round(s.wait)} Min Warten beim Umsteigen. Klappt zu ${pct(w.pOnTime)}.</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>`
+    : sf ? `<p class="colder"><span>Auf Nummer sicher: ${mins(sf.dep, s.dep)} Min früher los, dann ${Math.round(sf.wait)} Min Warten beim Umsteigen, klappt aber zu ${pct(sf.pOnTime)}.</span><button type="button" class="btn ghost small" id="warmer">Lieber die</button></p>` : "";
+  if (w || sf) $("warmer").addEventListener("click", () => { selKey = (w || sf).key; picked = true; renderAll(); });
   $("steps").innerHTML = stepsHTML(stepsFor(s));
   const facts = [], meas = measuredFor(s);
   if (s.cancelled) facts.push(`<span class="fact bad">Ein Zug davon fällt aus</span>`);
@@ -1367,7 +1388,7 @@ function renderList(rows, sel, best) {
     return `<button type="button" class="opt ${s.cancelled ? "x" : ""}" data-key="${esc(s.key)}" aria-current="${sel && sel.key === s.key}">
       <span><span class="lt">${hm(leave)}</span><span class="in">${s.cancelled ? "" : inTxt(leave - now)}</span></span>
       <span class="mid"><span class="lines">${s.sim.map(l => `<span class="leg">${lnHTML(l)}<span class="n">${hm(l.dep)}</span></span>`).join("")}</span>${note}</span>
-      <span class="an"><span class="n">${hm(s.arr + D.post * MIN)}</span><small class="${s.pOnTime < .85 ? "low" : ""}">klappt zu ${pct(s.pOnTime)}</small></span>
+      <span class="an"><span class="n">${hm(s.arr + D.post * MIN)}</span><small class="${s.pOnTime < SICHER ? "low" : ""}">klappt zu ${pct(s.pOnTime)}</small></span>
     </button>`;
   }).join("");
   box.querySelectorAll(".opt[data-key]").forEach(b => b.addEventListener("click", () => {
