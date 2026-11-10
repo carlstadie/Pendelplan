@@ -559,7 +559,9 @@ document.querySelectorAll("#stil button").forEach(b => b.addEventListener("click
 
 let delayData = null;
 let riskMult = {};   // per line, raised by current conditions (see loadConditions)
-let state = { js: [], sim: null, fetchedAt: 0, demo: forceDemo, err: null, loading: false };
+let state = { js: [], sim: null, fetchedAt: 0, demo: forceDemo, err: null, loading: false, offline: false };
+// once this device has seen live data, a failed request never switches to the demo timetable
+let everLive = store.get("gc-everlive", false), retryTimer = null;
 
 // ------------------------------------------------------------------ helpers
 function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -821,13 +823,25 @@ async function loadDelays() {
 
 async function fetchWindow(startMs, endMs) {
   const D = dirInfo();
-  if (!state.demo) {
-    try {
-      const [a, b] = await Promise.all([stopId(D.from), stopId(D.to)]);
-      return await collectLive(a.id, b.id, startMs, endMs);
-    } catch (e) { state.demo = true; state.err = e.message || String(e); }
+  if (forceDemo) return demoCollect(startMs, endMs);
+  try {
+    const [a, b] = await Promise.all([stopId(D.from), stopId(D.to)]);
+    const js = await collectLive(a.id, b.id, startMs, endMs);
+    state.demo = false; state.offline = false;
+    if (!everLive) { everLive = true; store.set("gc-everlive", true); }
+    return js;
+  } catch (e) {
+    state.err = e.message || String(e);
+    // Phone in the background, tunnel, flaky API: keep the real data we have and try again.
+    // Only a device that has never reached the live API (e.g. a preview) gets the demo timetable.
+    if (everLive) { state.offline = true; throw e; }
+    state.demo = true;
+    return demoCollect(startMs, endMs);
   }
-  return demoCollect(startMs, endMs);
+}
+function scheduleRetry(ms = 20000) {
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => { if (document.visibilityState === "visible") refresh(); else scheduleRetry(ms); }, ms);
 }
 
 let dropped = [];
@@ -845,7 +859,17 @@ function prepare(js) {
 async function refresh() {
   if (state.loading) return;
   state.loading = true; renderStatus();
-  await loadConditions();
+  try {
+    try { await loadConditions(); } catch { /* conditions are optional */ }
+    await refreshTrains();
+  } catch (e) {
+    scheduleRetry();   // keep showing the last data, try again soon
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+async function refreshTrains() {
   const D = dirInfo(), now = Date.now();
   const start = now + (D.pre - 8) * MIN, end = now + (D.pre + 150) * MIN;
   const js = prepare(await fetchWindow(start, end + 60 * MIN));
@@ -861,8 +885,7 @@ async function refresh() {
     const runs = sim ? sim.run(leave).arr : [];
     s.eArr = runs.length ? runs.reduce((a, v) => a + (Number.isFinite(v) ? v : s.arr + D.post * MIN + 40 * MIN), 0) / runs.length : s.arr + D.post * MIN;
   });
-  state = { ...state, js, sim, fetchedAt: Date.now(), loading: false, windowEnd: end };
-  render();
+  state = { ...state, js, sim, fetchedAt: Date.now(), windowEnd: end };
 }
 
 // ------------------------------------------------------------------ weather (Open-Meteo, no key)
@@ -1851,9 +1874,12 @@ function renderHistory() {
 function renderStatus() {
   const age = state.fetchedAt ? Math.round((Date.now() - state.fetchedAt) / 1000) : null;
   const txt = state.loading ? "aktualisiere …" : age === null ? "" : age < 60 ? `vor ${age} s aktualisiert` : `vor ${Math.round(age / 60)} Min aktualisiert`;
-  $("status").innerHTML = `<span class="dot ${state.demo ? "demo" : ""}"></span><b>${state.demo ? "Demo" : "Live"}</b><span>${txt}</span>`;
+  const label = state.demo ? "Demo" : state.offline ? "Offline" : "Live";
+  const txt2 = state.offline && !state.loading ? (state.fetchedAt ? `Stand ${hm(state.fetchedAt)}, versuche es gleich nochmal` : "versuche es gleich nochmal") : txt;
+  $("status").innerHTML = `<span class="dot ${state.demo || state.offline ? "demo" : ""}"></span><b>${label}</b><span>${txt2}</span>`;
   const b = $("banner");
-  if (forceDemo) { b.hidden = false; b.innerHTML = `<b>Demo-Modus:</b> ausgedachte Abfahrten nach dem echten Muster.`; }
+  if (state.offline && !state.demo) { b.hidden = false; b.innerHTML = `<b>Gerade keine Verbindung.</b> ${state.fetchedAt ? `Du siehst die echten Abfahrten von ${hm(state.fetchedAt)}.` : "Sobald wieder Netz da ist, kommen die Abfahrten."}`; }
+  else if (forceDemo) { b.hidden = false; b.innerHTML = `<b>Demo-Modus:</b> ausgedachte Abfahrten nach dem echten Muster.`; }
   else if (state.demo) { b.hidden = false; b.innerHTML = `<b>Keine Live-Daten.</b> Du siehst einen ausgedachten Fahrplan nach dem echten Muster. Auf der echten Seite kommen hier die richtigen Abfahrten.`; }
   else b.hidden = true;
 }
@@ -1910,7 +1936,9 @@ async function planArrival() {
   let sim = state.sim;
   const lastTrain = target - D.post * MIN;
   if (!sim || lastTrain > (state.windowEnd || 0)) {
-    const js = prepare(await fetchWindow(Math.max(now, lastTrain - 150 * MIN), lastTrain + 60 * MIN));
+    let js;
+    try { js = prepare(await fetchWindow(Math.max(now, lastTrain - 150 * MIN), lastTrain + 60 * MIN)); }
+    catch { res.innerHTML = `<small>Gerade keine Verbindung zum Fahrplan. Probier es gleich nochmal.</small>`; return; }
     sim = js.length ? new Sim(js, D.preSim, D.postSim) : null;
   }
   if (!sim) { res.innerHTML = `<small>Keine Verbindungen gefunden.</small>`; return; }
@@ -1983,7 +2011,9 @@ setInterval(clock, 1000); clock();
 setInterval(() => { if (!state.loading) { renderStatus(); renderAll(); } }, 20000);
 setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 90000);
 setInterval(() => { if (activeTrip() && document.visibilityState === "visible") pollTrip(); }, 30000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Date.now() - state.fetchedAt > 60000) { refresh(); if (activeTrip()) pollTrip(true); } });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && (state.offline || Date.now() - state.fetchedAt > 60000)) { refresh(); if (activeTrip()) pollTrip(true); } });
+window.addEventListener("online", () => { refresh(); if (activeTrip()) pollTrip(true); });
+window.addEventListener("pageshow", e => { if (e.persisted) { refresh(); if (activeTrip()) pollTrip(true); } });
 
 if (dir === "back") $("target").value = "18:00";
 fillSettings(); renderHeader(); renderStatus();
