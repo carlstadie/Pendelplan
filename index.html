@@ -188,6 +188,19 @@ h3 { margin: 0; font-family: var(--dot); font-weight: 800; font-size: 14px; lett
 .risk ul { margin: 4px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
 .newplan { border: 1px solid var(--bad); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .newplan h3 { color: var(--bad); }
+.newplan.auto { border-color: var(--bad); }
+.newplan .why { margin: 0; font-weight: 700; }
+.newplan .now { margin: 0; }
+.past { border-top: 1px solid var(--rule); padding-top: 10px; margin-top: 4px; }
+.past summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); }
+.past summary::-webkit-details-marker { display: none; }
+.past summary::after { content: "+"; }
+.past[open] summary::after { content: "–"; }
+.past .prow { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding-top: 10px; font-size: 14px; }
+.past .prow input { width: auto; }
+.past #past-res { display: flex; flex-direction: column; }
+.past #past-res > small { color: var(--muted); padding-top: 8px; }
+.altrow .likely { font-size: 11.5px; color: var(--muted); display: block; }
 .altbox { display: flex; flex-direction: column; }
 .altbox h3 { margin-bottom: 4px; }
 .altrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--rule); }
@@ -407,6 +420,11 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
       <div class="facts" id="facts"></div>
       <p class="notice" id="notice" hidden></p>
       <button class="btn take" id="take" type="button">Die nehm ich</button>
+      <details class="past" id="past">
+        <summary>Schon unterwegs? Fahrt nachverfolgen</summary>
+        <div class="prow"><label for="left-at" id="left-lbl">Zuhause losgefahren um</label><input type="time" id="left-at"><button class="btn small" id="past-find" type="button">Suchen</button></div>
+        <div id="past-res"></div>
+      </details>
     </section>
 
     <section class="card" id="tripcard" hidden>
@@ -416,7 +434,7 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
       <ol class="steps" id="trip-steps"></ol>
       <div class="wx" id="wx-trip"></div>
       <div class="altbox" id="trip-alt"></div>
-      <div class="tripfoot"><span id="trip-upd"></span><span class="btns"><button type="button" class="btn ghost small" id="trip-demo" hidden>Störung simulieren</button><button type="button" class="btn ghost small" id="trip-notify" aria-pressed="false">Benachrichtigen</button><button type="button" class="btn ghost small" id="trip-end">Fahrt beenden</button></span></div>
+      <div class="tripfoot"><span id="trip-upd"></span><span class="btns"><button type="button" class="btn ghost small" id="trip-demo" hidden>Störung simulieren</button><button type="button" class="btn ghost small" id="trip-cancel" hidden>Ausfall simulieren</button><button type="button" class="btn ghost small" id="trip-notify" aria-pressed="false">Benachrichtigen</button><button type="button" class="btn ghost small" id="trip-end">Fahrt beenden</button></span></div>
     </section>
   </div>
 
@@ -1022,6 +1040,7 @@ function ridesFor(dirKey, firstDep, lastArr, pre) {
 // weather. They raise the delay model for the affected lines (riskMult), so Score and 95 % react.
 let cond = { level: 0, reasons: [], lines: {}, weather: null, updated: 0 };
 let demoDisrupt = false;
+const demoCancel = new Set();   // trip ids the demo pretends are cancelled
 const BAD_WORDS = /störung|ausfall|fällt aus|notarzt|polizei|signal|weiche|reparatur|ersatzverkehr|unwetter|sturm|baum|personen im gleis|feuerwehr|stellwerk|verzögerung/i;
 const HARD_WORDS = /ersatzverkehr|fällt aus|ausfall|personen im gleis|polizei|notarzt|feuerwehr/i;
 
@@ -1111,13 +1130,15 @@ const hourOf = ms => +new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berli
 const dayLabel = ms => new Date(ms).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", day: "numeric", month: "numeric" });
 const legOf = l => ({ trip: l.trip, line: l.line, product: l.product, origin: l.origin, destination: l.destination, oid: l.oid, did: l.did, pdep: l.pdep, parr: l.parr, platform: l.platform, arrPlatform: l.arrPlatform });
 
-function startTrip(s) {
+function startTrip(s, opt = {}) {
   const D = dirInfo();
   trips.forEach(t => { if (t.status === "aktiv") finishTrip(t, "beendet"); });
   const last = s.sim[s.sim.length - 1];
+  // tracking a trip that already started: the timeline begins at the time you entered
+  const pre = opt.leaveAt ? Math.max(1, (s.sim[0].pdep - opt.leaveAt) / MIN) : D.pre;
   trips.push({
     id: String(Date.now()), dir, from: D.fromLabel, to: D.toLabel, fromStop: D.from, toStop: D.to,
-    pre: D.pre, preBest: D.preBest, post: D.post, legs: s.sim.map(legOf),
+    pre, preBest: D.preBest, post: D.post, legs: s.sim.map(legOf), leftAt: opt.leaveAt || null,
     plannedDoor: last.parr + D.post * MIN, status: "aktiv", created: Date.now(), snaps: {}, changes: [], demo: state.demo, alertLevel: 0,
   });
   saveTrips(); altCache.key = "";
@@ -1168,15 +1189,16 @@ function demoSnap(t, leg) {
   if (hit) d += 6;
   const now = Date.now(), dep = leg.pdep + d * MIN, arr = leg.parr + d * MIN;
   return {
-    dep, arr, depDelay: d, arrDelay: d, cancelled: false, platform: leg.platform, plannedPlatform: leg.platform, arrPlatform: leg.arrPlatform,
+    dep, arr, depDelay: d, arrDelay: d, cancelled: demoCancel.has(leg.trip), platform: leg.platform, plannedPlatform: leg.platform, arrPlatform: leg.arrPlatform,
     nextStop: now >= dep && now < arr ? leg.destination : null,
     trend: hit ? [0, 2, 4, d] : [d, d], remarks: hit ? ["Demo: Verzögerung wegen einer Signalstörung"] : [], updated: now,
   };
 }
 
-async function pollTrip(force) {
+async function pollTrip(force, depth = 0) {
   const t = activeTrip(); if (!t || polling) return;
   polling = true;
+  let again = false;
   try {
     const now = Date.now();
     for (const leg of t.legs) {
@@ -1185,20 +1207,85 @@ async function pollTrip(force) {
       try {
         const snap = t.demo ? demoSnap(t, leg) : await liveSnap(leg);
         snap.final = now > (snap.arr ?? leg.parr) + 20 * MIN;
-        if (snap.cancelled && !old?.cancelled) notify(t, `Die ${leg.line} um ${hm(leg.pdep)} fällt aus. Schau in die App, da steht schon die Alternative.`);
         if (old && snap.platform && old.platform && snap.platform !== old.platform) notify(t, `Gleiswechsel: Die ${leg.line} um ${hm(leg.pdep)} fährt von Gleis ${snap.platform}`);
         t.snaps[leg.trip] = snap;
       } catch { /* keep the last known state for this train */ }
     }
     t.checked = now;
-    const risk = tripRisk(t);
-    if (risk.level === 2 && t.alertLevel < 2) notify(t, risk.reasons.find(r => r.level === 2)?.text || "Deine Verbindung wackelt");
-    t.alertLevel = risk.level;
-    const lastLeg = t.legs[t.legs.length - 1], ls = t.snaps[lastLeg.trip];
-    if (now > (ls?.arr ?? lastLeg.parr) + t.post * MIN + 2 * MIN) finishTrip(t, "fertig");
+    // A train of the plan is cancelled or a change can't work any more: say so and switch
+    // to the next connection from where that train would have left, keeping the trains before it.
+    const br = brokenLeg(t);
+    if (br && t.lastBreak !== br.key && depth < 3) {
+      try {
+        const alts = await altsFromLeg(t, br.k);
+        const where = nice(t.legs[br.k].origin);
+        if (alts.length) {
+          const s = alts[0];
+          const plan = s.sim.map(l => `${l.line} ${hm(l.dep)}${l.platform ? ` (Gl. ${l.platform})` : ""}`).join(", ");
+          const text = `${br.why} Neuer Plan ab ${where}: ${plan}, an ${hm(s.arr + t.post * MIN)}.`;
+          swapLegs(t, br.k, s, br.why);
+          t.replan = { at: now, why: br.why, where, plan, door: s.arr + t.post * MIN };
+          notify(t, text);
+          again = true;
+        } else {
+          t.lastBreak = br.key;
+          t.replan = { at: now, why: br.why, where, plan: null };
+          notify(t, `${br.why} Ab ${where} finde ich gerade nichts Passendes.`);
+        }
+      } catch (e) { console.warn("Umplanen ging nicht:", e); /* no data right now, next check tries again */ }
+    }
+    if (!again) {
+      const risk = tripRisk(t);
+      if (risk.level === 2 && t.alertLevel < 2) notify(t, risk.reasons.find(r => r.level === 2)?.text || "Deine Verbindung wackelt");
+      t.alertLevel = risk.level;
+      const lastLeg = t.legs[t.legs.length - 1], ls = t.snaps[lastLeg.trip];
+      if (now > (ls?.arr ?? lastLeg.parr) + t.post * MIN + 2 * MIN) finishTrip(t, "fertig");
+    }
     saveTrips();
   } finally { polling = false; }
+  if (again) { pollTrip(true, depth + 1); return; }
   renderTripArea(); renderHistory();
+}
+
+// first train of the plan you can't take any more (cancelled, or the change is clearly missed)
+function brokenLeg(t) {
+  const now = Date.now(), L = t.legs.map(l => legLive(t, l)), pos = tripPosition(t);
+  if (pos.k === "done") return null;
+  const start = pos.k === "train" ? pos.i + 1 : pos.i;
+  for (let j = start; j < L.length; j++) {
+    const leg = t.legs[j];
+    if (L[j].cancelled) return { k: j, key: `c|${leg.trip}`, why: `Die ${leg.line} um ${hm(leg.pdep)} fällt aus.` };
+    if (j > 0 && !L[j - 1].cancelled && t.snaps[t.legs[j - 1].trip]) {
+      const gap = (L[j].dep - L[j - 1].arr) / MIN, need = xferNeed(t, j);
+      // clearly too late, or too late and the feeder is about to arrive (no more catching up)
+      if (gap < need - 1 || (gap < need && now >= L[j - 1].arr - 3 * MIN))
+        return { k: j, key: `x|${leg.trip}`, why: `Die ${leg.line} um ${hm(L[j].dep)} in ${nice(leg.origin)} ist nicht zu schaffen, die ${t.legs[j - 1].line} kommt erst um ${hm(L[j - 1].arr)}.` };
+    }
+  }
+  return null;
+}
+
+// next connections from the station where leg k starts, reachable after the trains before it
+async function altsFromLeg(t, k) {
+  const now = Date.now(), L = t.legs.map(l => legLive(t, l)), leg = t.legs[k], pos = tripPosition(t);
+  const prev = k > 0 ? t.legs[k - 1] : null;
+  const base = prev ? L[k - 1].arr : pos.k === "home" ? now + t.pre * MIN : Math.max(now + MIN, leg.pdep - 3 * MIN);
+  let list;
+  if (t.demo) {
+    if (/wannsee/i.test(leg.origin)) list = demoAltFrom(t, base);
+    else { const old = dir; dir = t.dir; list = prepare(demoCollect(base - MIN, base + 100 * MIN)); dir = old; }
+  } else {
+    const to = await stopId(t.toStop);
+    const from = leg.oid || (await stopId(leg.origin)).id;
+    const res = await api("/journeys", { from, to: to.id, departure: new Date(base).toISOString(), results: "6", transferTime: String(CFG.wsSame), stopovers: "false", remarks: "true", language: "de" });
+    list = (res.journeys || []).map(summarize).filter(s => s && s.viable);
+  }
+  const dead = new Set([...(t.dead || []), ...t.legs.filter(l => legLive(t, l).cancelled).map(l => l.trip)]);
+  list = list.filter(s => !s.cancelled && s.sim[0].dep >= now
+    && !s.sim.some(l => dead.has(l.trip) || (l.line === leg.line && l.pdep === leg.pdep))
+    && s.sim[0].dep >= base + (prev ? minTransfer(leg.origin, L[k - 1].arrPlatform, s.sim[0].platform, prev.product, s.sim[0].product) : 0) * MIN);
+  const risky = s => s.margin != null && s.margin < 2 ? 15 * MIN : 0;
+  return list.sort((a, b) => (a.arr + risky(a) - b.arr - risky(b)) || (a.wait - b.wait)).slice(0, 4);
 }
 
 function notify(t, text) {
@@ -1247,12 +1334,22 @@ function tripRisk(t) {
 }
 
 
-function rebook(t, fromIdx, s) {
-  const was = t.legs.slice(fromIdx).map(l => `${l.line} ${hm(l.pdep)}`).join(", ");
+function swapLegs(t, fromIdx, s, why) {
+  const now = Date.now(), was = t.legs.slice(fromIdx).map(l => `${l.line} ${hm(l.pdep)}`).join(", ");
+  const leftAt = t.legs[0].pdep - t.pre * MIN;
+  t.dead = [...new Set([...(t.dead || []), ...t.legs.filter(l => legLive(t, l).cancelled).map(l => l.trip)])].slice(-20);
   t.legs = t.legs.slice(0, fromIdx).concat(s.sim.map(legOf));
-  if (fromIdx === 0) t.pre = dirInfo().pre;
-  t.changes.push({ at: Date.now(), text: `Umgeplant um ${hm(Date.now())}: statt ${was} ging's mit ${s.sim.map(l => `${l.line} ${hm(l.dep)}`).join(", ")} weiter` });
-  t.alertLevel = 0; altCache.key = ""; saveTrips();
+  if (fromIdx === 0) {
+    // still at home: normal lead time; already on the way: keep the time you actually left
+    if (now < leftAt) { const old = dir; dir = t.dir; t.pre = dirInfo().pre; dir = old; }
+    else t.pre = Math.max(1, (t.legs[0].pdep - leftAt) / MIN);
+  }
+  t.changes.push({ at: now, text: `${why ? "Automatisch umgeplant" : "Umgeplant"} um ${hm(now)}: ${why ? why + " " : ""}Statt ${was} ging's mit ${s.sim.map(l => `${l.line} ${hm(l.dep)}`).join(", ")} weiter` });
+  t.alertLevel = 0; t.lastBreak = null; altCache.key = ""; saveTrips();
+}
+function rebook(t, fromIdx, s) {
+  swapLegs(t, fromIdx, s, null);
+  t.replan = null;
   pollTrip(true);
 }
 
@@ -1569,6 +1666,8 @@ async function tripAlternatives(t) {
     // the first train of an alternative must be reachable on foot from where you get off
     list = list.filter(s => !s.cancelled && s.sim[0].dep >= now && s.sim[0].dep >= base + (arrPlat || pos.k === "station" && pos.i > 0 ? minTransfer(station, arrPlat, s.sim[0].platform) : 0) * MIN);
   }
+  const dead = new Set([...(t.dead || []), ...t.legs.filter(l => legLive(t, l).cancelled).map(l => l.trip)]);
+  list = list.filter(s => !s.sim.some(l => dead.has(l.trip)));
   const post = t.post;
   // earliest arrival first, but a change with no minute to spare counts as risky (it often means the next train)
   const risky = s => s.margin != null && s.margin < 2 ? 15 * MIN : 0;
@@ -1637,7 +1736,10 @@ function renderBoardTrip(t, risk) {
   $("b-trains").innerHTML = t.legs.map((l, i) => `<span><span class="chip">${esc(l.line)}</span>${hm(L[i].dep)}${L[i].dd >= 1 ? ` +${Math.round(L[i].dd)}` : ""}${L[i].platform ? ` <span class="gl">Gl. ${esc(L[i].platform)}</span>` : ""}${L[i].cancelled ? ` <span class="x">fällt aus</span>` : ""}</span>`).join("");
   const bs = $("b-status");
   bs.hidden = false; bs.className = `b-status lv${risk.level}`;
-  bs.textContent = risk.level === 0 ? "Alles im Plan" : risk.level === 1 ? "Ein bisschen wackelig" : "Achtung: Plan ändert sich";
+  const fresh = t.replan && Date.now() - t.replan.at < 20 * MIN;
+  bs.textContent = fresh && t.replan.plan && risk.level < 2 ? "Neuer Plan steht" : risk.level === 0 ? "Alles im Plan" : risk.level === 1 ? "Ein bisschen wackelig" : "Achtung: Plan ändert sich";
+  if (fresh && t.replan.plan && risk.level < 2) bs.className = "b-status lv1";
+  if (t.leftAt) $("b-kind").textContent += " · nachverfolgt";
   $("b-hist").innerHTML = ""; $("b-histlbl").innerHTML = "";
   renderTrackTrip(t);
   tickTripBoard(t);
@@ -1646,8 +1748,12 @@ function renderBoardTrip(t, risk) {
 async function renderTrip(t) {
   const risk = tripRisk(t);
   renderBoardTrip(t, risk);
-  $("trip-alert").hidden = !(t.alert && Date.now() - t.alert.at < 10 * MIN);
+  const rp = t.replan && Date.now() - t.replan.at < 20 * MIN ? t.replan : null;
+  $("trip-alert").hidden = !!rp || !(t.alert && Date.now() - t.alert.at < 10 * MIN);
   if (t.alert) $("trip-alert").textContent = t.alert.text;
+  const rpHTML = rp ? `<div class="newplan auto"><h3>So nicht möglich</h3><p class="why">${esc(rp.why)}</p>${rp.plan
+    ? `<p class="now">Neuer Plan ab ${esc(rp.where)}, schon übernommen: <b>${esc(rp.plan)}</b>, an ${hm(rp.door)}. Die Schritte unten sind angepasst.</p>`
+    : `<p class="now">Ab ${esc(rp.where)} gibt's gerade nichts Passendes. Ich schau weiter.</p>`}</div>` : "";
   const rb = $("trip-risk");
   rb.hidden = !risk.reasons.length;
   rb.className = `risk lv${risk.level}`;
@@ -1661,9 +1767,10 @@ async function renderTrip(t) {
   $("trip-notify").setAttribute("aria-pressed", String(notifyOn));
   $("trip-demo").hidden = !t.demo;
   $("trip-demo").textContent = demoDisrupt ? "Störung beenden" : "Störung simulieren";
+  $("trip-cancel").hidden = !t.demo;
 
   const alt = await tripAlternatives(t), np = $("trip-newplan"), box = $("trip-alt");
-  if (!alt) { np.innerHTML = ""; box.innerHTML = ""; return; }
+  if (!alt) { np.innerHTML = rpHTML; box.innerHTML = ""; return; }
   const row = (s, i, top) => {
     const own = s.sim.map(l => l.trip).join("|") === alt.plan;
     const lead = alt.pos.k === "home" ? `<span class="n"><b>los ${hm(s.dep - t.pre * MIN)}</b></span>` : "";
@@ -1674,11 +1781,11 @@ async function renderTrip(t) {
   const others = alt.list.filter(s => s.sim.map(l => l.trip).join("|") !== alt.plan);
   if (!alt.holds && others.length) {
     const why = risk.reasons.find(r => r.level === 2)?.text || "Deine Verbindung klappt so nicht mehr.";
-    np.innerHTML = `<div class="newplan"><h3>Neuer Plan ab ${esc(alt.where)}</h3><p class="muted">${esc(why)}. So kommst du trotzdem hin:</p>${row(others[0], alt.list.indexOf(others[0]), true)}</div>`;
+    np.innerHTML = rpHTML + `<div class="newplan"><h3>Neuer Plan ab ${esc(alt.where)}</h3><p class="muted">${esc(why)}. So kommst du trotzdem hin:</p>${row(others[0], alt.list.indexOf(others[0]), true)}</div>`;
     $("b-to").textContent = `neu: an ${hm(others[0].arr + alt.post * MIN)}`;
     box.innerHTML = others.length > 1 ? `<h3>Oder</h3>${others.slice(1, 3).map(s => row(s, alt.list.indexOf(s), false)).join("")}` : "";
   } else {
-    np.innerHTML = "";
+    np.innerHTML = rpHTML;
     box.innerHTML = alt.list.length ? `<h3>Falls was schiefgeht: weiter ab ${esc(alt.where)}</h3>${alt.list.slice(0, 3).map((s, i) => row(s, i, false)).join("")}` : "";
   }
   document.querySelectorAll("#tripcard [data-alt]").forEach(b => b.addEventListener("click", () => rebook(t, alt.from, alt.list[+b.dataset.alt])));
@@ -1866,7 +1973,7 @@ function renderHistory() {
     return `<details class="hrow"><summary><span class="hd">${dayLabel(t.created)}</span><span class="hr">${esc(t.from)} → ${esc(t.to)}</span>
       <span class="n ht">geplant ${hm(t.plannedDoor)}, da ${hm(o.door)}</span>${badge}</summary>
       <ul>${legs}</ul>${t.changes.map(c => `<p class="muted">${esc(c.text)}</p>`).join("")}
-      ${o.measured ? "" : `<p class="muted">Nicht für alle Züge gab's Live-Daten, ein Teil der Zeiten ist laut Fahrplan.</p>`}${t.demo ? `<p class="muted">Demo-Fahrt</p>` : ""}</details>`;
+      ${o.measured ? "" : `<p class="muted">Nicht für alle Züge gab's Live-Daten, ein Teil der Zeiten ist laut Fahrplan.</p>`}${t.leftAt ? `<p class="muted">Nachverfolgt, losgefahren um ${hm(t.leftAt)}</p>` : ""}${t.demo ? `<p class="muted">Demo-Fahrt</p>` : ""}</details>`;
   }).join("");
 }
 
@@ -1980,6 +2087,7 @@ $("copy").addEventListener("click", () => {
 function setDir(d) {
   if (d === dir) return;
   dir = d; selKey = null; picked = false;
+  pastLabel(); $("past-res").innerHTML = "";
   $("target").value = dir === "out" ? "08:30" : "18:00";
   $("result").innerHTML = `<small>Sagt dir, wann du spätestens losmusst.</small>`;
   state.js = []; state.sim = null; render(); updateShare();
@@ -1995,6 +2103,62 @@ $("trip-notify").addEventListener("click", async () => {
   notifyOn = !notifyOn; store.set("gc-notify", notifyOn); renderAll();
 });
 $("trip-demo").addEventListener("click", () => { demoDisrupt = !demoDisrupt; cond.updated = 0; altCache.key = ""; refresh(); pollTrip(true); });
+// demo: the next train of the plan that hasn't left yet (preferably the second one) is cancelled
+$("trip-cancel").addEventListener("click", () => {
+  const t = activeTrip(); if (!t) return;
+  const now = Date.now(), up = t.legs.filter(l => legLive(t, l).dep > now);
+  const leg = up.find(l => t.legs.indexOf(l) > 0) || up[0];
+  if (leg) { demoCancel.add(leg.trip); pollTrip(true); }
+});
+
+// ------------------------------------------------------------------ track a trip that already started
+function berlinAt(h, m) {
+  const now = Date.now();
+  const parts = ms => Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(new Date(ms)).map(x => [x.type, +x.value || x.value]));
+  const t0 = parts(now), guess = Date.UTC(t0.year, t0.month - 1, t0.day, h, m);
+  const g2 = parts(guess), offset = Date.UTC(g2.year, g2.month - 1, g2.day, g2.hour, g2.minute, g2.second) - guess;
+  let t = guess - offset;
+  if (t > now + 12 * 60 * MIN) t -= 24 * 60 * MIN;   // 23:50 entered at 00:10 means yesterday
+  return t;
+}
+function pastLabel() { $("left-lbl").textContent = `${dirInfo().fromLabel} losgefahren um`; }
+$("past").addEventListener("toggle", () => {
+  if (!$("past").open) return;
+  pastLabel();
+  if (!$("left-at").value) $("left-at").value = hm(Date.now() - 20 * MIN);
+});
+async function findPast() {
+  const D = dirInfo(), now = Date.now(), res = $("past-res"), v = $("left-at").value;
+  if (!v) return;
+  const [h, m] = v.split(":").map(Number), leave = berlinAt(h, m);
+  if (leave > now + MIN) { res.innerHTML = `<small>Das ist noch nicht passiert. Für später nimm einfach oben die passende Verbindung.</small>`; return; }
+  if (now - leave > 5 * 60 * MIN) { res.innerHTML = `<small>Das ist zu lange her, so weit zurück gibt's keine Live-Daten mehr.</small>`; return; }
+  res.innerHTML = `<small>Suche …</small>`;
+  let js;
+  try { js = prepare(await fetchWindow(leave + (D.preBest - 3) * MIN, leave + (D.pre + 80) * MIN)); }
+  catch { res.innerHTML = `<small>Gerade keine Verbindung zum Fahrplan. Probier es gleich nochmal.</small>`; return; }
+  // the earliest first train that is reachable at all; one row per first train, earliest arrival
+  const seen = new Set();
+  const cand = js.filter(s => s.sim[0].pdep >= leave + (D.preBest - 1) * MIN)
+    .filter(s => !seen.has(s.sim[0].trip) && seen.add(s.sim[0].trip)).slice(0, 4);
+  if (!cand.length) { res.innerHTML = `<small>Keine passende Verbindung gefunden.</small>`; return; }
+  // most likely: the first one you get to with a normal ride (average time to the platform)
+  const avg = (D.pre + D.preBest) / 2;
+  const likely = cand.find(s => s.sim[0].dep >= leave + avg * MIN) || cand[cand.length - 1];
+  res.innerHTML = `<small>Welche war es wohl?</small>` + cand.map((s, i) => {
+    const door = s.arr + D.post * MIN, done = door < now;
+    return `<div class="altrow${s === likely ? " top" : ""}"><span class="lines">${s.sim.map(l => `<span class="leg">${lnHTML(l)}<span class="n">${hm(l.dep)}</span>${l.platform ? `<small>Gl. ${esc(l.platform)}</small>` : ""}</span>`).join("")}${s === likely ? `<span class="likely">am wahrscheinlichsten</span>` : ""}</span>
+      <span class="n an">an ${hm(door)}${s.sim.length > 1 ? `<small>${Math.round(s.wait)} Min warten</small>` : ""}</span>
+      ${done ? `<span class="mine">schon da</span>` : `<button type="button" class="btn ${s === likely ? "" : "ghost "}small" data-past="${i}">Die war's</button>`}</div>`;
+  }).join("");
+  res.querySelectorAll("[data-past]").forEach(b => b.addEventListener("click", () => {
+    startTrip(cand[+b.dataset.past], { leaveAt: leave });
+    $("past").open = false; res.innerHTML = "";
+  }));
+}
+$("past-find").addEventListener("click", findPast);
 let clearArmed = false;
 $("hist-clear").addEventListener("click", () => {
   if (!clearArmed) { clearArmed = true; $("hist-clear").textContent = "Wirklich alles löschen?"; setTimeout(() => { clearArmed = false; $("hist-clear").textContent = "Verlauf löschen"; }, 4000); return; }
