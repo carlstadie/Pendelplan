@@ -541,7 +541,7 @@ const CFG = {
   // Potsdam Hbf transit: traffic lights in front of the station + bike parking + to the platform,
   // anywhere between hbfmin and hbfmax minutes (same on the way home)
   rad: num("rad", saved.rad ?? 30), hbfmin: num("hbfmin", saved.hbfmin ?? 5), hbfmax: num("hbfmax", saved.hbfmax ?? 10),
-  radziel: num("radziel", saved.radziel ?? 10), gleisziel: num("gleisziel", saved.gleisziel ?? 2),
+  radziel: num("radziel", saved.radziel ?? 10), gleisziel: num("gleisziel", saved.gleisziel ?? 4),
   puffer: num("puffer", saved.puffer ?? 6), umstieg: 2, streuung: 1.5, n: 2000,
   // Walking time to change trains in Wannsee, by platform: S-Bahn islands are tracks 1/2 and 3/4,
   // regional trains use 5/6, all connected by the pedestrian tunnel (stairs/escalator/lift mid-platform).
@@ -780,7 +780,10 @@ function drawDelay(r, leg, now) {
   const L = delayData?.linien?.[leg.line];
   if (L && L.n >= MIN_LEARNED && L.delays?.length) {
     const d = L.delays[Math.floor(r() * L.delays.length)];
-    return [r() < Math.min(.5, (L.ausfall + 1) / (L.n + 2) * k), d > 0 ? d * k : d];
+    // cancellations in a disruption come in bunches and show up live; the everyday chance is
+    // the share of trains cancelled out of the blue (computed by the collector)
+    const pc = L.zufallsausfall ?? (L.ausfall + 1) / (L.n + 2);
+    return [r() < Math.min(.5, pc * k), d > 0 ? d * k : Math.max(d, -1)];
   }
   const p = PRIORS[leg.product] || PRIORS.suburban;
   if (r() < Math.min(.5, p.cancel * k)) return [true, 0];
@@ -1165,7 +1168,19 @@ async function liveSnap(leg) {
   const r = await api(`/trips/${encodeURIComponent(leg.trip)}`, { stopovers: "true", remarks: "true", polyline: "false", language: "de" });
   const tr = r.trip || r, so = tr.stopovers || [];
   const find = (id, name) => { let i = so.findIndex(x => x.stop?.id === id); if (i < 0) i = so.findIndex(x => shortName(x.stop?.name) === name); return i; };
-  const A = so[find(leg.oid, leg.origin)] || {}, B = so[find(leg.did, leg.destination)] || {};
+  const ia = find(leg.oid, leg.origin), ib = find(leg.did, leg.destination);
+  const A = so[ia] || {}, B = so[ib] || {};
+  // Only your own section counts: the train must leave where you get on and arrive where you
+  // get off. A cancellation further along (or before you board) doesn't stop you.
+  // A cancelled stop has no live time any more; a stop where a shortened train starts or ends
+  // is "cancelled" only on the other side (arrival or departure), so check each side separately.
+  const depGone = x => !!x.cancelled && x.departure == null;
+  const arrGone = x => !!x.cancelled && x.arrival == null;
+  const found = ia >= 0 && ib >= 0 && ia < ib;
+  const cancelled = found
+    ? depGone(A) || arrGone(B)   // a skipped stop in between doesn't matter, you stay on board
+    : !!(tr.cancelled || A.cancelled || B.cancelled);
+  const partial = found && !cancelled && so.some(x => x.cancelled);
   const now = Date.now();
   let lastIdx = -1;
   so.forEach((x, i) => { const tt = T(x, "departure") ?? T(x, "arrival"); if (tt != null && tt <= now) lastIdx = i; });
@@ -1173,7 +1188,7 @@ async function liveSnap(leg) {
   return {
     dep: T(A, "departure") ?? leg.pdep, arr: T(B, "arrival") ?? leg.parr,
     depDelay: A.departureDelay != null ? A.departureDelay / 60 : null, arrDelay: B.arrivalDelay != null ? B.arrivalDelay / 60 : null,
-    cancelled: !!(tr.cancelled || A.cancelled || B.cancelled),
+    cancelled, partial,
     platform: A.departurePlatform || A.plannedDeparturePlatform || leg.platform, plannedPlatform: A.plannedDeparturePlatform || leg.platform,
     arrPlatform: B.arrivalPlatform || B.plannedArrivalPlatform || leg.arrPlatform,
     nextStop: so[lastIdx + 1] && lastIdx >= 0 ? shortName(so[lastIdx + 1].stop?.name) : null,
@@ -1201,27 +1216,34 @@ async function pollTrip(force, depth = 0) {
   let again = false;
   try {
     const now = Date.now();
+    let got = 0, tried = 0;
     for (const leg of t.legs) {
       const old = t.snaps[leg.trip];
       if (!force && old?.final) continue;
+      tried++;
       try {
         const snap = t.demo ? demoSnap(t, leg) : await liveSnap(leg);
         snap.final = now > (snap.arr ?? leg.parr) + 20 * MIN;
         if (old && snap.platform && old.platform && snap.platform !== old.platform) notify(t, `Gleiswechsel: Die ${leg.line} um ${hm(leg.pdep)} fährt von Gleis ${snap.platform}`);
-        t.snaps[leg.trip] = snap;
+        t.snaps[leg.trip] = snap; got++;
       } catch { /* keep the last known state for this train */ }
     }
-    t.checked = now;
+    if (got || !tried) t.checked = now;   // only when something actually arrived
+    t.failing = tried > 0 && !got;
     // A train of the plan is cancelled or a change can't work any more: say so and switch
     // to the next connection from where that train would have left, keeping the trains before it.
     const br = brokenLeg(t);
+    // not left yet: nothing is fixed, so look for the best whole trip again (e.g. a later S7 to the next S1)
+    if (br) br.bad = t.legs[br.k];
+    if (br && tripPosition(t).k === "home") br.k = 0;
     if (br && t.lastBreak !== br.key && depth < 3) {
       try {
-        const alts = await altsFromLeg(t, br.k);
-        const where = nice(t.legs[br.k].origin);
+        const alts = await altsFromLeg(t, br.k, br.bad);
+        const home = tripPosition(t).k === "home";
+        const where = home ? t.from : nice(t.legs[br.k].origin);
         if (alts.length) {
           const s = alts[0];
-          const plan = s.sim.map(l => `${l.line} ${hm(l.dep)}${l.platform ? ` (Gl. ${l.platform})` : ""}`).join(", ");
+          const plan = (home ? `los ${hm(s.dep - t.pre * MIN)}, ` : "") + s.sim.map(l => `${l.line} ${hm(l.dep)}${l.platform ? ` (Gl. ${l.platform})` : ""}`).join(", ");
           const text = `${br.why} Neuer Plan ab ${where}: ${plan}, an ${hm(s.arr + t.post * MIN)}.`;
           swapLegs(t, br.k, s, br.why);
           t.replan = { at: now, why: br.why, where, plan, door: s.arr + t.post * MIN };
@@ -1266,7 +1288,7 @@ function brokenLeg(t) {
 }
 
 // next connections from the station where leg k starts, reachable after the trains before it
-async function altsFromLeg(t, k) {
+async function altsFromLeg(t, k, bad = t.legs[k]) {
   const now = Date.now(), L = t.legs.map(l => legLive(t, l)), leg = t.legs[k], pos = tripPosition(t);
   const prev = k > 0 ? t.legs[k - 1] : null;
   const base = prev ? L[k - 1].arr : pos.k === "home" ? now + t.pre * MIN : Math.max(now + MIN, leg.pdep - 3 * MIN);
@@ -1282,7 +1304,7 @@ async function altsFromLeg(t, k) {
   }
   const dead = new Set([...(t.dead || []), ...t.legs.filter(l => legLive(t, l).cancelled).map(l => l.trip)]);
   list = list.filter(s => !s.cancelled && s.sim[0].dep >= now
-    && !s.sim.some(l => dead.has(l.trip) || (l.line === leg.line && l.pdep === leg.pdep))
+    && !s.sim.some(l => dead.has(l.trip) || l.trip === bad.trip || (l.line === bad.line && l.pdep === bad.pdep))
     && s.sim[0].dep >= base + (prev ? minTransfer(leg.origin, L[k - 1].arrPlatform, s.sim[0].platform, prev.product, s.sim[0].product) : 0) * MIN);
   const risky = s => s.margin != null && s.margin < 2 ? 15 * MIN : 0;
   return list.sort((a, b) => (a.arr + risky(a) - b.arr - risky(b)) || (a.wait - b.wait)).slice(0, 4);
@@ -1307,7 +1329,11 @@ function tripRisk(t) {
     const tr = x.s?.trend || [];
     if (tr.length >= 2 && tr[tr.length - 1] - tr[0] >= 2 && now < x.arr)
       reasons.push({ level: 1, text: `Die ${leg.line} wird immer später (${tr.map(v => (v >= 0 ? "+" : "") + Math.round(v)).join(" → ")} Min an den letzten Halten)` });
-    (x.s?.remarks || []).forEach(r => reasons.push({ level: HARD_WORDS.test(r) ? 2 : 1, text: `${leg.line}: ${r}` }));
+    (x.s?.remarks || []).forEach(r => {
+      let level = HARD_WORDS.test(r) ? 2 : 1;
+      if (level === 2 && x.s.partial && !/personen im gleis|polizei|notarzt|feuerwehr|ersatzverkehr/i.test(r)) level = 1;
+      reasons.push({ level, text: x.s.partial && level === 1 ? `${leg.line}: ${r} (dein Abschnitt fährt laut Live-Daten)` : `${leg.line}: ${r}` });
+    });
     if (x.pchange) reasons.push({ level: 1, text: `${leg.line} fährt heute von Gleis ${x.platform}` });
     const c = cond.lines[leg.line];
     // the general line state matters less once this train's own live data is known
@@ -1664,7 +1690,9 @@ async function tripAlternatives(t) {
       } catch { list = []; }
     }
     // the first train of an alternative must be reachable on foot from where you get off
-    list = list.filter(s => !s.cancelled && s.sim[0].dep >= now && s.sim[0].dep >= base + (arrPlat || pos.k === "station" && pos.i > 0 ? minTransfer(station, arrPlat, s.sim[0].platform) : 0) * MIN);
+    const feeder = pos.k === "train" ? t.legs[pos.i] : pos.k === "station" && pos.i > 0 ? t.legs[pos.i - 1] : null;
+    list = list.filter(s => !s.cancelled && s.sim[0].dep >= now
+      && s.sim[0].dep >= base + (feeder ? minTransfer(station, arrPlat, s.sim[0].platform, feeder.product, s.sim[0].product) : 0) * MIN);
   }
   const dead = new Set([...(t.dead || []), ...t.legs.filter(l => legLive(t, l).cancelled).map(l => l.trip)]);
   list = list.filter(s => !s.sim.some(l => dead.has(l.trip)));
@@ -1696,9 +1724,10 @@ function stepsLive(t) {
     const x = L[i];
     const delay = x.dd != null && x.dd >= 1 ? ` <span class="late">+${Math.round(x.dd)}</span>` : "";
     const canc = x.cancelled ? ` <span class="late">fällt aus</span>` : "";
+    const part = !x.cancelled && x.s?.partial ? ` · <span class="warn-t">Teilausfall, dein Abschnitt fährt</span>` : "";
     const plat = x.platform ? (x.pchange ? `<span class="late">heute Gleis ${esc(x.platform)}</span> · ` : `Gleis ${esc(x.platform)} · `) : "";
     const posTxt = now >= x.dep && now < x.arr && x.s?.nextStop ? ` · nächster Halt ${esc(nice(x.s.nextStop))}` : "";
-    add("train", x.dep, leg.pdep, x.arr, `${lnHTML(leg)}${delay}${canc} bis ${esc(nice(leg.destination))}`, `${plat}an ${hm(x.arr)}${posTxt}`, `${Math.round((x.arr - x.dep) / MIN)} Min`, lineColor(leg.line, leg.product));
+    add("train", x.dep, leg.pdep, x.arr, `${lnHTML(leg)}${delay}${canc} bis ${esc(nice(leg.destination))}`, `${plat}an ${hm(x.arr)}${posTxt}${part}`, `${Math.round((x.arr - x.dep) / MIN)} Min`, lineColor(leg.line, leg.product));
   });
   const lx = L[L.length - 1], ll = t.legs[t.legs.length - 1], hi = hiHbf();
   if (out) add("bike", lx.arr, ll.parr, lx.arr + t.post * MIN, `Mit dem Rad zur ${esc(t.to)}`, "", `${CFG.radziel} Min`);
@@ -1762,7 +1791,8 @@ async function renderTrip(t) {
   moveStepPoint(t);
   renderRides($("wx-trip"), ridesFor(t.dir, legLive(t, t.legs[0]).dep, legLive(t, t.legs[t.legs.length - 1]).arr, t.pre));
   const age = t.checked ? Math.round((Date.now() - t.checked) / 1000) : null;
-  $("trip-upd").textContent = age == null ? "Hole Live-Daten …" : `Live-Daten von vor ${age < 60 ? age + " s" : Math.round(age / 60) + " Min"}`;
+  $("trip-upd").textContent = (age == null ? "Hole Live-Daten …" : `Live-Daten von vor ${age < 60 ? age + " s" : Math.round(age / 60) + " Min"}`)
+    + (t.failing ? " · gerade keine Verbindung, versuche es weiter" : "");
   $("trip-notify").textContent = notifyOn ? "Benachrichtigungen an" : "Benachrichtigen";
   $("trip-notify").setAttribute("aria-pressed", String(notifyOn));
   $("trip-demo").hidden = !t.demo;
@@ -1838,7 +1868,7 @@ function renderLage() {
   const sub = lv === 0 ? "keine Probleme bei S1, S7 und RE1" : "fließt schon in die Prozente ein";
   el.innerHTML = `<details class="lage-d lv${lv}"${lv === 2 ? " open" : ""}><summary><span class="lg">${label}</span><span class="lsub">${sub}</span></summary>
     ${rs.length ? `<ul>${rs.map(r => `<li class="lv${r.level}">${esc(r.text)}</li>`).join("")}</ul>` : ""}
-    <p>${state.demo ? " (in der Demo ausgedacht)" : ""}.</p></details>`;
+    ${state.demo ? `<p>In der Demo ausgedacht.</p>` : ""}</details>`;
 }
 
 // ------------------------------------------------------------------ statistics + heatmap
@@ -1900,7 +1930,7 @@ function renderStats() {
   const L = $("lstats"), X = $("xstats"), src = $("stats-src");
   if (!d) {
     L.innerHTML = ""; X.innerHTML = ""; $("skey").innerHTML = ""; $("hm").innerHTML = ""; $("hm-lines").innerHTML = "";
-    src.innerHTML = "Hier stehen bald echte Zahlen. Die GitHub Action notiert alle 30 Minuten, wie pünktlich die Züge wirklich waren; nach ein paar Tagen füllt sich das.";
+    src.innerHTML = "Hier stehen bald echte Zahlen. Die GitHub Action notiert alle paar Minuten, wie pünktlich die Züge wirklich waren; nach ein paar Tagen füllt sich das.";
     return;
   }
   const P = d.puenktlichkeit || {}, key = { 1: "le1", 3: "le3", 5: "le5" }[thr];
@@ -1964,7 +1994,9 @@ function renderHistory() {
   sum.innerHTML = `<b>${past.length}</b> ${past.length === 1 ? "Fahrt" : "Fahrten"}, davon <b>${ok}</b> pünktlich · ${missed} ${missed === 1 ? "Anschluss" : "Anschlüsse"} verpasst · im Schnitt ${avg > 0 ? "+" : ""}${avg.toFixed(1).replace(".", ",")} Min`;
   list.innerHTML = past.slice(0, 30).map(t => {
     const o = t.outcome;
+    const auto = t.changes.some(c => c.text.startsWith("Automatisch"));
     const badge = o.cancelled ? `<span class="hb bad">Ausfall</span>` : !o.xferOk ? `<span class="hb bad">Anschluss weg</span>`
+      : auto ? `<span class="hb warn">umgeplant${o.delta > 1 ? ` · +${o.delta} Min` : ""}</span>`
       : o.delta <= 1 ? `<span class="hb ok">pünktlich</span>` : `<span class="hb warn">+${o.delta} Min</span>`;
     const legs = t.legs.map(l => {
       const s = t.snaps[l.trip], dd = s?.depDelay != null ? Math.round(s.depDelay) : null, ad = s?.arrDelay != null ? Math.round(s.arrDelay) : null;
@@ -2141,7 +2173,7 @@ async function findPast() {
   catch { res.innerHTML = `<small>Gerade keine Verbindung zum Fahrplan. Probier es gleich nochmal.</small>`; return; }
   // the earliest first train that is reachable at all; one row per first train, earliest arrival
   const seen = new Set();
-  const cand = js.filter(s => s.sim[0].pdep >= leave + (D.preBest - 1) * MIN)
+  const cand = js.filter(s => !s.cancelled && s.sim[0].pdep >= leave + (D.preBest - 1) * MIN)
     .filter(s => !seen.has(s.sim[0].trip) && seen.add(s.sim[0].trip)).slice(0, 4);
   if (!cand.length) { res.innerHTML = `<small>Keine passende Verbindung gefunden.</small>`; return; }
   // most likely: the first one you get to with a normal ride (average time to the platform)
@@ -2175,7 +2207,13 @@ setInterval(clock, 1000); clock();
 setInterval(() => { if (!state.loading) { renderStatus(); renderAll(); } }, 20000);
 setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 90000);
 setInterval(() => { if (activeTrip() && document.visibilityState === "visible") pollTrip(); }, 30000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && (state.offline || Date.now() - state.fetchedAt > 60000)) { refresh(); if (activeTrip()) pollTrip(true); } });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (state.offline || Date.now() - state.fetchedAt > 60000) refresh();
+  const t = activeTrip();
+  if (t && (!t.checked || Date.now() - t.checked > 30000)) pollTrip(true);
+  else renderAll();
+});
 window.addEventListener("online", () => { refresh(); if (activeTrip()) pollTrip(true); });
 window.addEventListener("pageshow", e => { if (e.persisted) { refresh(); if (activeTrip()) pollTrip(true); } });
 
