@@ -3493,3 +3493,17 @@ key,datum,halt,art,linie,produkt,geplant,verspaetung_min,ausfall,gleis
 1|94|3|86|12112026|900066102|departures,2026-11-13,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-13T00:18:00+01:00,0.0,0,1
 1|35|1|86|12112026|900066102|arrivals,2026-11-13,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-13T00:09:00+01:00,1.0,0,2
 1|94|3|86|12112026|900066102|arrivals,2026-11-13,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-13T00:17:00+01:00,0.0,0,1
+1|88597|0|86|12112026|900230999|departures,2026-11-13,S Potsdam Hauptbahnhof,dep,RE1,regional,2026-11-13T00:53:00+01:00,11.0,0,4
+1|88597|0|86|12112026|900230999|arrivals,2026-11-13,S Potsdam Hauptbahnhof,arr,RE1,regional,2026-11-13T00:51:00+01:00,11.0,0,4
+1|3958|0|86|12112026|900053301|departures,2026-11-13,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-13T00:33:00+01:00,1.0,0,4
+1|26|0|86|12112026|900053301|departures,2026-11-13,S Wannsee Bhf (Berlin),dep,S1,suburban,2026-11-13T00:34:00+01:00,0.0,0,3
+1|90378|0|86|13112026|900053301|departures,2026-11-13,S Wannsee Bhf (Berlin),dep,RE7,regional,2026-11-13T00:48:00+01:00,0.0,0,5
+1|3954|0|86|12112026|900053301|departures,2026-11-13,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-13T00:53:00+01:00,0.0,0,4
+1|29|0|86|12112026|900053301|departures,2026-11-13,S Wannsee Bhf (Berlin),dep,S1,suburban,2026-11-13T00:54:00+01:00,0.0,0,3
+1|90378|0|86|13112026|900053301|arrivals,2026-11-13,S Wannsee Bhf (Berlin),arr,RE7,regional,2026-11-13T00:47:00+01:00,1.0,0,5
+1|24|0|86|12112026|900066102|departures,2026-11-13,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-13T00:29:00+01:00,2.0,0,2
+1|93|1|86|12112026|900066102|departures,2026-11-13,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-13T00:38:00+01:00,0.0,0,1
+1|26|0|86|12112026|900066102|departures,2026-11-13,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-13T00:49:00+01:00,1.0,0,2
+1|24|0|86|12112026|900066102|arrivals,2026-11-13,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-13T00:29:00+01:00,1.0,0,2
+1|93|1|86|12112026|900066102|arrivals,2026-11-13,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-13T00:37:00+01:00,0.0,0,1
+1|26|0|86|12112026|900066102|arrivals,2026-11-13,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-13T00:49:00+01:00,1.0,0,2
