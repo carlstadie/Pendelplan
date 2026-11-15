@@ -5,6 +5,10 @@
 <title>Pendeln Zuhause–Charité</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#07090B">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="BahnPlan">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -310,6 +314,10 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.7) sepia
 .hmkey .pk { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: 8px; }
 .hmkey .pk i { width: 12px; height: 12px; border-radius: 2px; box-shadow: inset 0 0 0 2px var(--text); }
 #hm-prob { margin-top: 12px; }
+.wknav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 0 10px; }
+.wknav span { font-weight: 700; text-align: center; flex: 1; }
+.wknav .btn { min-width: 44px; font-size: 20px; line-height: 1; }
+.wknav .btn:disabled { opacity: .3; }
 #hm-prob h4 { margin: 0 0 6px; font-size: 14px; }
 #hm-prob ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 #hm-prob li { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; border-top: 1px solid var(--rule); padding-top: 6px; }
@@ -495,8 +503,13 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
       <div id="xstats"></div>
       <h3>Nach Wochentag und Uhrzeit</h3>
       <div class="hmbar">
-        <div class="seg" id="hm-span" role="group" aria-label="Zeitraum"><button type="button" data-s="alle" aria-pressed="true">Insgesamt</button><button type="button" data-s="woche" aria-pressed="false">Diese Woche</button></div>
+        <div class="seg" id="hm-span" role="group" aria-label="Zeitraum"><button type="button" data-s="alle" aria-pressed="true">Insgesamt</button><button type="button" data-s="woche" aria-pressed="false">Einzelne Wochen</button></div>
         <div class="seg" id="hm-lines" role="group" aria-label="Linie"></div>
+      </div>
+      <div class="wknav" id="hm-wk" hidden>
+        <button type="button" class="btn ghost small" id="wk-prev" aria-label="Woche davor">‹</button>
+        <span id="wk-lbl"></span>
+        <button type="button" class="btn ghost small" id="wk-next" aria-label="Woche danach">›</button>
       </div>
       <div class="hm" id="hm"></div>
       <div class="hmkey"><span>50 %</span><span class="grad"></span><span>100 %</span><span class="none"></span><span>zu wenig Daten</span><span class="pk" id="hm-pk"><i></i>Problemzeit</span></div>
@@ -1887,7 +1900,7 @@ function renderLage() {
 }
 
 // ------------------------------------------------------------------ statistics + heatmap
-let thr = store.get("gc-thr", 1), hmLine = store.get("gc-hmline", "Alle"), hmSpan = store.get("gc-hmspan", "alle");
+let thr = store.get("gc-thr", 1), hmLine = store.get("gc-hmline", "Alle"), hmSpan = store.get("gc-hmspan", "alle"), hmWeek = null;
 function demoStats() {
   const heat = {}, lines = { S1: [.83, 0], S7: [.85, 0], RE1: [.68, 0] };
   for (const [ln, [base]] of Object.entries(lines)) {
@@ -1913,24 +1926,35 @@ function demoStats() {
     },
     stunden: { S1: { "7": { n: 168, le1: 119, ausfall: 4 } } },
     heatmap: heat,
-    heatmap_woche: demoWeek(heat),
+    heatmap_wochen: demoWeeks(heat),
     tage: 29,
   };
 }
-// demo: this week = a quarter of the numbers, only up to now, a bit worse on Tuesday
-function demoWeek(heat) {
+// demo: the last four weeks, each a quarter of the numbers with its own bad spot; this week only up to now
+function demoWeeks(heat) {
   const now = new Date(), wd = (now.getDay() + 6) % 7, hr = now.getHours(), out = {};
-  for (const [ln, cells] of Object.entries(heat)) {
-    out[ln] = {};
-    for (const [k, c] of Object.entries(cells)) {
-      const [d, h] = k.split("-").map(Number);
-      if (d > wd || (d === wd && h > hr)) continue;
-      const f = .25, worse = d === 1 && h >= 7 && h <= 9 ? .7 : 1;
-      out[ln][k] = { n: Math.round(c.n * f), le1: Math.round(c.le1 * f * worse), le3: Math.round(c.le3 * f * worse), le5: Math.round(c.le5 * f * worse), ausfall: 0 };
+  const mon = new Date(now); mon.setHours(12, 0, 0, 0); mon.setDate(mon.getDate() - wd);
+  for (let w = 3; w >= 0; w--) {
+    const m = new Date(mon); m.setDate(m.getDate() - 7 * w);
+    const iso = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")}`;
+    const badDay = [1, 3, 4, 0][w], wk = out[iso] = {};
+    for (const [ln, cells] of Object.entries(heat)) {
+      wk[ln] = {};
+      for (const [k, c] of Object.entries(cells)) {
+        const [d, h] = k.split("-").map(Number);
+        if (w === 0 && (d > wd || (d === wd && h > hr))) continue;
+        const f = .25, worse = (d === badDay && h >= 7 && h <= 9 ? .65 : 1) * (.9 + hash(iso + ln + k) * .2);
+        wk[ln][k] = { n: Math.round(c.n * f), le1: Math.min(Math.round(c.n * f), Math.round(c.le1 * f * worse)), le3: Math.min(Math.round(c.n * f), Math.round(c.le3 * f * worse)), le5: Math.min(Math.round(c.n * f), Math.round(c.le5 * f * worse)), ausfall: 0 };
+      }
     }
   }
   return out;
 }
+const weekLabel = iso => {
+  const a = new Date(iso + "T12:00:00"), b = new Date(a); b.setDate(b.getDate() + 6);
+  const f = (x, o) => x.toLocaleDateString("de-DE", o);
+  return a.getMonth() === b.getMonth() ? `${f(a, { day: "numeric" })}.–${f(b, { day: "numeric", month: "long" })}` : `${f(a, { day: "numeric", month: "short" })} – ${f(b, { day: "numeric", month: "short" })}`;
+};
 let DEMO_STATS = null;
 function statsData() {
   if (delayData?.puenktlichkeit && Object.keys(delayData.puenktlichkeit).length) return { d: delayData, demo: false };
@@ -2032,7 +2056,15 @@ function renderStats() {
   // heatmap: weekday × hour, all data or this week
   document.querySelectorAll("#hm-span button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === hmSpan)));
   const week = hmSpan === "woche";
-  const H = (week ? d.heatmap_woche : d.heatmap) || {}, lines = ["S1", "S7", "RE1"].filter(l => (d.heatmap || {})[l]);
+  const W = d.heatmap_wochen || (d.heatmap_woche ? { [d.woche_ab || "?"]: d.heatmap_woche } : {}), wks = Object.keys(W).sort();
+  if (!wks.includes(hmWeek)) hmWeek = wks[wks.length - 1] || null;
+  const wi = wks.indexOf(hmWeek), thisWeek = wi === wks.length - 1 && hmWeek && Date.now() - Date.parse(hmWeek + "T00:00:00") < 7 * 864e5;
+  $("hm-wk").hidden = !week || !wks.length;
+  if (week && wks.length) {
+    $("wk-lbl").textContent = thisWeek ? `Diese Woche · ${weekLabel(hmWeek)}` : weekLabel(hmWeek);
+    $("wk-prev").disabled = wi <= 0; $("wk-next").disabled = wi >= wks.length - 1;
+  }
+  const H = (week ? W[hmWeek] : d.heatmap) || {}, lines = ["S1", "S7", "RE1"].filter(l => (d.heatmap || {})[l]);
   $("hm-lines").innerHTML = ["Alle", ...lines].map(l => `<button type="button" data-l="${esc(l)}" aria-pressed="${l === hmLine}">${esc(l)}</button>`).join("");
   document.querySelectorAll("#hm-lines button").forEach(b => b.addEventListener("click", () => { hmLine = b.dataset.l; store.set("gc-hmline", hmLine); renderStats(); }));
   const use = hmLine === "Alle" ? lines : lines.filter(l => l === hmLine);
@@ -2047,17 +2079,17 @@ function renderStats() {
   days.forEach((dn, dd) => {
     html += `<span class="d">${dn}</span>`;
     hours.forEach(h => {
-      const c = cell(dd, h), cls = "c" + (prob?.cells.has(`${dd}-${h}`) ? " prob" : "") + (week && dd === nowD && h === nowH ? " now" : "");
+      const c = cell(dd, h), cls = "c" + (prob?.cells.has(`${dd}-${h}`) ? " prob" : "") + (week && thisWeek && dd === nowD && h === nowH ? " now" : "");
       const min = week ? 3 : 5;
       if (c.n < min) html += `<span class="${cls}" title="${dn} ${h} Uhr: zu wenig Daten"></span>`;
       else { const p = c[key] / c.n; html += `<span class="${cls}" style="background:${heatColor(p)}" title="${dn} ${h}–${h + 1} Uhr: ${pc(c[key], c.n)} % pünktlich (${c.n} Fahrten)"></span>`; }
     });
   });
   g.innerHTML = Object.keys(H).length ? html
-    : `<p class="muted" style="grid-column:1/-1">${week && !d.heatmap_woche ? "Die Wochen-Ansicht kommt mit dem nächsten Lauf der Datensammlung." : week ? "Diese Woche noch keine Daten." : "Noch keine Daten für die Heatmap."}</p>`;
+    : `<p class="muted" style="grid-column:1/-1">${week && !wks.length ? "Die Wochen-Ansicht kommt mit dem nächsten Lauf der Datensammlung." : week ? "In dieser Woche noch keine Daten." : "Noch keine Daten für die Heatmap."}</p>`;
   const PB = $("hm-prob");
   $("hm-pk").hidden = !prob?.list?.length;
-  if (week) PB.innerHTML = `<p class="muted">Seit Montag${d.woche_ab ? ` (${fmtDate(d.woche_ab)})` : ""}, gestrichelt umrandet ist die aktuelle Stunde.</p>`;
+  if (week) PB.innerHTML = wks.length ? `<p class="muted">${wks.length === 1 ? "Bisher gibt es eine Woche, ab der nächsten kannst du blättern." : `${wks.length} Wochen gespeichert, mit ‹ › oder Wischen blättern.`}${thisWeek ? " Gestrichelt umrandet ist die aktuelle Stunde." : ""}</p>` : "";
   else if (!prob) PB.innerHTML = "";
   else if (!prob.enough) PB.innerHTML = `<p class="muted">Problemzeiten zeige ich, sobald es ${PROB_DAYS} Tage Daten gibt (bisher ${prob.days}).</p>`;
   else PB.innerHTML = prob.list.length
@@ -2070,6 +2102,16 @@ function renderStats() {
 }
 document.querySelectorAll("#thr button").forEach(b => b.addEventListener("click", () => { thr = +b.dataset.thr; store.set("gc-thr", thr); renderStats(); }));
 document.querySelectorAll("#hm-span button").forEach(b => b.addEventListener("click", () => { hmSpan = b.dataset.s; store.set("gc-hmspan", hmSpan); renderStats(); }));
+function stepWeek(dlt) {
+  const { d } = statsData(), wks = Object.keys(d?.heatmap_wochen || {}).sort(), i = wks.indexOf(hmWeek) + dlt;
+  if (i >= 0 && i < wks.length) { hmWeek = wks[i]; renderStats(); }
+}
+$("wk-prev").addEventListener("click", () => stepWeek(-1));
+$("wk-next").addEventListener("click", () => stepWeek(1));
+// swipe left/right on the heatmap to change the week
+let hmX = null;
+$("hm").addEventListener("touchstart", e => { hmX = hmSpan === "woche" ? e.touches[0].clientX : null; }, { passive: true });
+$("hm").addEventListener("touchend", e => { if (hmX == null) return; const dx = e.changedTouches[0].clientX - hmX; if (Math.abs(dx) > 50) stepWeek(dx < 0 ? 1 : -1); hmX = null; });
 
 // ------------------------------------------------------------------ history
 function renderHistory() {

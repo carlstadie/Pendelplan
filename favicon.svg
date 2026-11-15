@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- BahnPlan: Zuhause → Wannsee (Umstieg) → Charité -->
+  <rect width="512" height="512" rx="112" fill="#0A1B4D"/>
+  <g fill="none" stroke-linecap="round" stroke-width="64">
+    <path d="M110 392 C 190 392, 190 256, 256 256" stroke="#9677D6"/>
+    <path d="M256 256 C 322 256, 322 120, 402 120" stroke="#E35FA8"/>
+  </g>
+  <circle cx="110" cy="392" r="62" fill="#FFFFFF"/>
+  <circle cx="402" cy="120" r="62" fill="#FFFFFF"/>
+  <circle cx="256" cy="256" r="50" fill="#0A1B4D" stroke="#FFFFFF" stroke-width="30"/>
+</svg>

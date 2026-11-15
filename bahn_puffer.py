@@ -575,6 +575,15 @@ def heatmap(rows):
     return out
 
 
+def weekly_heatmaps(rows):
+    """{"2026-11-09": {"S1": {...}, ...}, ...}: heatmap() per week, Monday as key."""
+    weeks = defaultdict(list)
+    for r in rows:
+        t = datetime.fromisoformat(r["geplant"]).astimezone(TZ)
+        weeks[(t.date() - timedelta(days=t.weekday())).isoformat()].append(r)
+    return {w: {k: v for k, v in heatmap(rs).items() if k in ("S1", "S7", "RE1")} for w, rs in sorted(weeks.items())}
+
+
 def _station(halt):
     h = halt.lower()
     return "pdm" if "potsdam" in h else "wan" if "wannsee" in h else "bg" if "botanischer" in h else None
@@ -656,8 +665,6 @@ def export_json(path, max_per_line=600):
     punctuality per line and measured transfer success in Wannsee."""
     rows = _read_log()
     rows.sort(key=lambda r: r["geplant"])
-    today = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start = (today - timedelta(days=today.weekday())).isoformat()
     lines = defaultdict(lambda: {"n": 0, "ausfall": 0, "delays": []})
     for r in rows[::-1]:  # newest first, so the cap keeps recent data
         d = lines[r["linie"]]
@@ -680,10 +687,8 @@ def export_json(path, max_per_line=600):
         "puenktlichkeit": punctuality(rows),
         "stunden": by_hour(rows),
         "heatmap": {k: v for k, v in heatmap(rows).items() if k in ("S1", "S7", "RE1")},
-        # the same, only for the current week (since Monday 00:00 Berlin time)
-        "heatmap_woche": {k: v for k, v in heatmap([r for r in rows if r["geplant"] >= week_start]).items()
-                          if k in ("S1", "S7", "RE1")},
-        "woche_ab": week_start[:10],
+        # the same per calendar week (key = Monday), to click through on the page
+        "heatmap_wochen": weekly_heatmaps(rows),
         "tage": len({r["datum"] for r in rows}),
         "anschluesse": connections(rows),
     }
