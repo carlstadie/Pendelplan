@@ -304,6 +304,17 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.7) sepia
 .xstat .sbar { grid-column: 1 / -1; height: 4px; }
 .hm { display: grid; gap: 2px; font-size: 10.5px; font-family: var(--nums); }
 .hm .c { aspect-ratio: 1 / 1.15; border-radius: 2px; background: var(--panel-2); min-width: 0; }
+.hm .c.prob { box-shadow: inset 0 0 0 2px var(--text); }
+.hm .c.now { outline: 1px dashed var(--muted); outline-offset: 1px; }
+.hmbar { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: space-between; margin-bottom: 8px; }
+.hmkey .pk { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: 8px; }
+.hmkey .pk i { width: 12px; height: 12px; border-radius: 2px; box-shadow: inset 0 0 0 2px var(--text); }
+#hm-prob { margin-top: 12px; }
+#hm-prob h4 { margin: 0 0 6px; font-size: 14px; }
+#hm-prob ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+#hm-prob li { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; border-top: 1px solid var(--rule); padding-top: 6px; }
+#hm-prob li .pq { font-family: var(--nums); white-space: nowrap; }
+#hm-prob li small { display: block; color: var(--muted); font-size: 12px; }
 .hm .h, .hm .d { color: var(--muted); display: flex; align-items: center; justify-content: center; }
 .hm .d { justify-content: flex-start; font-family: var(--dot); font-weight: 800; color: var(--amber-mid); }
 .hmkey { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
@@ -483,9 +494,13 @@ footer span:first-child { color: var(--amber-mid); font-family: var(--dot); font
       <h3 id="x-h">Umsteigen in Wannsee</h3>
       <div id="xstats"></div>
       <h3>Nach Wochentag und Uhrzeit</h3>
-      <div class="seg" id="hm-lines" role="group" aria-label="Linie"></div>
+      <div class="hmbar">
+        <div class="seg" id="hm-span" role="group" aria-label="Zeitraum"><button type="button" data-s="alle" aria-pressed="true">Insgesamt</button><button type="button" data-s="woche" aria-pressed="false">Diese Woche</button></div>
+        <div class="seg" id="hm-lines" role="group" aria-label="Linie"></div>
+      </div>
       <div class="hm" id="hm"></div>
-      <div class="hmkey"><span>50 %</span><span class="grad"></span><span>100 %</span><span class="none"></span><span>zu wenig Daten</span></div>
+      <div class="hmkey"><span>50 %</span><span class="grad"></span><span>100 %</span><span class="none"></span><span>zu wenig Daten</span><span class="pk" id="hm-pk"><i></i>Problemzeit</span></div>
+      <div id="hm-prob"></div>
       <p class="src" id="stats-src"></p>
     </div>
   </section>
@@ -1872,7 +1887,7 @@ function renderLage() {
 }
 
 // ------------------------------------------------------------------ statistics + heatmap
-let thr = store.get("gc-thr", 1), hmLine = store.get("gc-hmline", "Alle");
+let thr = store.get("gc-thr", 1), hmLine = store.get("gc-hmline", "Alle"), hmSpan = store.get("gc-hmspan", "alle");
 function demoStats() {
   const heat = {}, lines = { S1: [.83, 0], S7: [.85, 0], RE1: [.68, 0] };
   for (const [ln, [base]] of Object.entries(lines)) {
@@ -1898,7 +1913,23 @@ function demoStats() {
     },
     stunden: { S1: { "7": { n: 168, le1: 119, ausfall: 4 } } },
     heatmap: heat,
+    heatmap_woche: demoWeek(heat),
+    tage: 29,
   };
+}
+// demo: this week = a quarter of the numbers, only up to now, a bit worse on Tuesday
+function demoWeek(heat) {
+  const now = new Date(), wd = (now.getDay() + 6) % 7, hr = now.getHours(), out = {};
+  for (const [ln, cells] of Object.entries(heat)) {
+    out[ln] = {};
+    for (const [k, c] of Object.entries(cells)) {
+      const [d, h] = k.split("-").map(Number);
+      if (d > wd || (d === wd && h > hr)) continue;
+      const f = .25, worse = d === 1 && h >= 7 && h <= 9 ? .7 : 1;
+      out[ln][k] = { n: Math.round(c.n * f), le1: Math.round(c.le1 * f * worse), le3: Math.round(c.le3 * f * worse), le5: Math.round(c.le5 * f * worse), ausfall: 0 };
+    }
+  }
+  return out;
 }
 let DEMO_STATS = null;
 function statsData() {
@@ -1924,12 +1955,55 @@ function heatColor(p) {
   return `rgb(${a[1].map((v, i) => Math.round(v + (b[1][i] - v) * f)).join(",")})`;
 }
 
+// Hours that are clearly worse than usual. Only with enough data, and only if the difference
+// is real: at least 10 points below the average and still below it at the upper end of a 90 %
+// confidence range (Wilson), so a few unlucky trains don't make an hour "bad".
+const PROB_DAYS = 14;
+function wilsonHi(ok, n, z = 1.64) {
+  const p = ok / n, z2 = z * z;
+  return (p + z2 / (2 * n) + z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))) / (1 + z2 / n);
+}
+function problemHours(cell, hours, days, d, key) {
+  const span = d.zeitraum ? Math.round((Date.parse(d.zeitraum.bis) - Date.parse(d.zeitraum.von)) / 864e5) + 1 : 0;
+  const nd = d.tage ?? span;
+  const res = { enough: nd >= PROB_DAYS, days: nd, list: [], cells: new Set(), base: 0 };
+  if (!res.enough) return res;
+  let N = 0, OK = 0;
+  const cells = [];
+  days.forEach((dn, dd) => hours.forEach(h => { const c = cell(dd, h); N += c.n; OK += c[key]; cells.push({ dd, h, dn, c }); }));
+  if (!N) return res;
+  const base = res.base = OK / N;
+  const bad = (ok, n, minN) => n >= minN && ok / n <= base - .10 && wilsonHi(ok, n) < base;
+  // the same hour on all workdays (e.g. "every evening at 17")
+  const rows = [];
+  hours.forEach(h => {
+    const ws = cells.filter(x => x.h === h && x.dd < 5), n = ws.reduce((a, x) => a + x.c.n, 0), ok = ws.reduce((a, x) => a + x.c[key], 0);
+    if (bad(ok, n, 40)) rows.push({ day: null, h, n, ok, hourAll: h, sev: (base - ok / n) * Math.sqrt(n), keys: ws.map(x => `${x.dd}-${x.h}`) });
+  });
+  // single weekday hours (e.g. "Friday afternoon"), unless already covered by the workday hour
+  cells.forEach(x => {
+    if (x.dd < 5 && rows.some(r => r.hourAll === x.h)) return;
+    if (bad(x.c[key], x.c.n, 20)) rows.push({ day: x.dd, h: x.h, n: x.c.n, ok: x.c[key], sev: (base - x.c[key] / x.c.n) * Math.sqrt(x.c.n), keys: [`${x.dd}-${x.h}`] });
+  });
+  // neighbouring hours become one range ("Mo–Fr 16–19 Uhr")
+  const merged = [];
+  rows.sort((a, b) => (a.day ?? 9) - (b.day ?? 9) || a.h - b.h).forEach(r => {
+    const m = merged[merged.length - 1];
+    if (m && m.day === r.day && m.h2 === r.h) { m.h2 = r.h + 1; m.n += r.n; m.ok += r.ok; m.keys.push(...r.keys); m.sev = Math.max(m.sev, r.sev); }
+    else merged.push({ ...r, h2: r.h + 1, keys: [...r.keys] });
+  });
+  merged.forEach(m => { m.label = `${m.day == null ? "Mo–Fr" : days[m.day]} ${m.h}–${m.h2} Uhr`; });
+  res.list = merged.sort((a, b) => b.sev - a.sev).slice(0, 5);
+  res.list.forEach(r => r.keys.forEach(k => res.cells.add(k)));
+  return res;
+}
+
 function renderStats() {
   const { d, demo } = statsData();
   document.querySelectorAll("#thr button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.thr === thr)));
   const L = $("lstats"), X = $("xstats"), src = $("stats-src");
   if (!d) {
-    L.innerHTML = ""; X.innerHTML = ""; $("skey").innerHTML = ""; $("hm").innerHTML = ""; $("hm-lines").innerHTML = "";
+    L.innerHTML = ""; X.innerHTML = ""; $("skey").innerHTML = ""; $("hm").innerHTML = ""; $("hm-lines").innerHTML = ""; $("hm-prob").innerHTML = "";
     src.innerHTML = "Hier stehen bald echte Zahlen. Die GitHub Action notiert alle paar Minuten, wie pünktlich die Züge wirklich waren; nach ein paar Tagen füllt sich das.";
     return;
   }
@@ -1955,32 +2029,47 @@ function renderStats() {
       <span class="sub">hat ${x.ok.toLocaleString("de-DE")} von ${x.n.toLocaleString("de-DE")} Mal geklappt</span></div>`;
   }).join("") : `<p class="muted">Noch zu wenige Umstiege gemessen.</p>`;
 
-  // heatmap: weekday × hour
-  const H = d.heatmap || {}, lines = Object.keys(H).filter(l => ["S1", "S7", "RE1"].includes(l));
+  // heatmap: weekday × hour, all data or this week
+  document.querySelectorAll("#hm-span button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === hmSpan)));
+  const week = hmSpan === "woche";
+  const H = (week ? d.heatmap_woche : d.heatmap) || {}, lines = ["S1", "S7", "RE1"].filter(l => (d.heatmap || {})[l]);
   $("hm-lines").innerHTML = ["Alle", ...lines].map(l => `<button type="button" data-l="${esc(l)}" aria-pressed="${l === hmLine}">${esc(l)}</button>`).join("");
   document.querySelectorAll("#hm-lines button").forEach(b => b.addEventListener("click", () => { hmLine = b.dataset.l; store.set("gc-hmline", hmLine); renderStats(); }));
   const use = hmLine === "Alle" ? lines : lines.filter(l => l === hmLine);
   const cell = (dd, h) => { const r = { n: 0, le1: 0, le3: 0, le5: 0 }; use.forEach(l => { const c = H[l]?.[`${dd}-${h}`]; if (c) for (const k in r) r[k] += c[k] || 0; }); return r; };
   const hours = []; for (let h = 5; h <= 22; h++) hours.push(h);
   const days = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const prob = week ? null : problemHours(cell, hours, days, d, key);
+  const nowD = (new Date().getDay() + 6) % 7, nowH = berlinHour();
   const g = $("hm");
   g.style.gridTemplateColumns = `24px repeat(${hours.length}, minmax(0, 1fr))`;
   let html = `<span></span>${hours.map(h => `<span class="h">${h % 3 === 2 ? h : ""}</span>`).join("")}`;
   days.forEach((dn, dd) => {
     html += `<span class="d">${dn}</span>`;
     hours.forEach(h => {
-      const c = cell(dd, h);
-      if (c.n < 5) html += `<span class="c" title="${dn} ${h} Uhr: zu wenig Daten"></span>`;
-      else { const p = c[key] / c.n; html += `<span class="c" style="background:${heatColor(p)}" title="${dn} ${h}–${h + 1} Uhr: ${pc(c[key], c.n)} % pünktlich (${c.n} Fahrten)"></span>`; }
+      const c = cell(dd, h), cls = "c" + (prob?.cells.has(`${dd}-${h}`) ? " prob" : "") + (week && dd === nowD && h === nowH ? " now" : "");
+      const min = week ? 3 : 5;
+      if (c.n < min) html += `<span class="${cls}" title="${dn} ${h} Uhr: zu wenig Daten"></span>`;
+      else { const p = c[key] / c.n; html += `<span class="${cls}" style="background:${heatColor(p)}" title="${dn} ${h}–${h + 1} Uhr: ${pc(c[key], c.n)} % pünktlich (${c.n} Fahrten)"></span>`; }
     });
   });
-  g.innerHTML = Object.keys(H).length ? html : `<p class="muted" style="grid-column:1/-1">Noch keine Daten für die Heatmap.</p>`;
+  g.innerHTML = Object.keys(H).length ? html
+    : `<p class="muted" style="grid-column:1/-1">${week && !d.heatmap_woche ? "Die Wochen-Ansicht kommt mit dem nächsten Lauf der Datensammlung." : week ? "Diese Woche noch keine Daten." : "Noch keine Daten für die Heatmap."}</p>`;
+  const PB = $("hm-prob");
+  $("hm-pk").hidden = !prob?.list?.length;
+  if (week) PB.innerHTML = `<p class="muted">Seit Montag${d.woche_ab ? ` (${fmtDate(d.woche_ab)})` : ""}, gestrichelt umrandet ist die aktuelle Stunde.</p>`;
+  else if (!prob) PB.innerHTML = "";
+  else if (!prob.enough) PB.innerHTML = `<p class="muted">Problemzeiten zeige ich, sobald es ${PROB_DAYS} Tage Daten gibt (bisher ${prob.days}).</p>`;
+  else PB.innerHTML = prob.list.length
+    ? `<h4>Problemzeiten</h4><ul>${prob.list.map(x => `<li><span>${x.label}<small>${x.n} Fahrten${hmLine === "Alle" ? ", alle Linien" : ", " + esc(hmLine)}</small></span><span class="pq"><b>${pc(x.ok, x.n)} %</b> statt ${Math.round(prob.base * 100)} %</span></li>`).join("")}</ul>`
+    : `<p class="muted">Keine Stunde ist deutlich schlechter als der Schnitt (${Math.round(prob.base * 100)} % pünktlich).</p>`;
 
   const z = d.zeitraum;
   src.innerHTML = (demo ? "<b>Das sind Beispieldaten für die Demo.</b> " : "") +
     `Gemessen in Potsdam Hbf, Wannsee und am Botanischen Garten${z ? ` vom ${fmtDate(z.von)} bis ${fmtDate(z.bis)}` : ""}. Ausgefallene Züge zählen als unpünktlich bzw. als verpasster Anschluss.`;
 }
 document.querySelectorAll("#thr button").forEach(b => b.addEventListener("click", () => { thr = +b.dataset.thr; store.set("gc-thr", thr); renderStats(); }));
+document.querySelectorAll("#hm-span button").forEach(b => b.addEventListener("click", () => { hmSpan = b.dataset.s; store.set("gc-hmspan", hmSpan); renderStats(); }));
 
 // ------------------------------------------------------------------ history
 function renderHistory() {

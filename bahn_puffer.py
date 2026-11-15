@@ -462,7 +462,65 @@ def _read_log():
     if not LOG.exists():
         return []
     with LOG.open(newline="") as f:
-        return list(csv.DictReader(f))
+        return clean(list(csv.DictReader(f)))
+
+
+def _trip(r):
+    """VBB trip id of a log row (the key is "<tripId>|<stop>|<kind>", the trip id has '|' itself)."""
+    return r["key"].rsplit("|", 2)[0]
+
+
+def _norm_line(name, product):
+    """Replacement trains sometimes come as "7" or "1" instead of "S7"/"S1"."""
+    name = (name or "").strip()
+    return "S" + name if name.isdigit() and product == "suburban" else name
+
+
+def clean(rows):
+    """Tidy the raw log before any statistics:
+    - line names normalised ("7" -> "S7")
+    - a cancelled train that was replaced by another train at the same stop and the same
+      planned minute (an extra trip id, often named "7"/"1") is not a cancellation for you,
+      so the cancelled row is dropped and the replacement counts
+    - impossible delays (more than 5 minutes early) are dropped"""
+    out = []
+    for r in rows:
+        r = dict(r)
+        r["linie"] = _norm_line(r.get("linie"), r.get("produkt"))
+        try:
+            if r["ausfall"] != "1" and float(r["verspaetung_min"]) < -5:
+                continue
+        except ValueError:
+            continue
+        out.append(r)
+    running = {(r["halt"], r["art"], r["geplant"], r["linie"]) for r in out if r["ausfall"] != "1"}
+    return [r for r in out if not (r["ausfall"] == "1" and (r["halt"], r["art"], r["geplant"], r["linie"]) in running)]
+
+
+def random_cancellations(rows, window_min=60, cluster=3):
+    """Per line: (cancelled trips that came out of the blue, all trips).
+
+    Cancellations come in bunches during a disruption (signal failure, emergency, ...).
+    The page sees those live anyway (cancelled trains, line health) and raises the risk then,
+    so for the everyday model only isolated cancellations count: a cancelled trip is
+    "isolated" if fewer than `cluster` trips of that line were cancelled within +-window_min."""
+    trips = defaultdict(dict)   # line -> trip -> (planned time, cancelled)
+    for r in rows:
+        t = datetime.fromisoformat(r["geplant"])
+        k = _trip(r)
+        old = trips[r["linie"]].get(k)
+        canc = r["ausfall"] == "1"
+        trips[r["linie"]][k] = (min(t, old[0]) if old else t, canc or (old[1] if old else False))
+    out = {}
+    for line, tr in trips.items():
+        cts = sorted(t for t, c in tr.values() if c)
+        lone = 0
+        for t in cts:
+            lo = bisect.bisect_left(cts, t - timedelta(minutes=window_min))
+            hi = bisect.bisect_right(cts, t + timedelta(minutes=window_min))
+            lone += (hi - lo) < cluster
+        out[line] = (lone, len(tr))
+    return out
 
 
 def punctuality(rows):
@@ -556,7 +614,7 @@ def connections(rows, min_transfer=None, max_gap=16):
     for r in rows:
         st = _station(r["halt"])
         if st:
-            ev[r["key"].split("|")[0]][(st, r["art"])] = r
+            ev[_trip(r)][(st, r["art"])] = r
     plan = lambda r: datetime.fromisoformat(r["geplant"])
     real = lambda r: plan(r) + timedelta(minutes=float(r["verspaetung_min"]))
     groups = {k: [] for k in ("out_feed", "out_conn", "back_feed", "back_conn")}
@@ -598,6 +656,8 @@ def export_json(path, max_per_line=600):
     punctuality per line and measured transfer success in Wannsee."""
     rows = _read_log()
     rows.sort(key=lambda r: r["geplant"])
+    today = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = (today - timedelta(days=today.weekday())).isoformat()
     lines = defaultdict(lambda: {"n": 0, "ausfall": 0, "delays": []})
     for r in rows[::-1]:  # newest first, so the cap keeps recent data
         d = lines[r["linie"]]
@@ -608,6 +668,11 @@ def export_json(path, max_per_line=600):
             d["ausfall"] += 1
         else:
             d["delays"].append(round(float(r["verspaetung_min"]), 1))
+    # chance per train to be cancelled out of the blue (disruption bunches are seen live)
+    for line, (lone, ntrips) in random_cancellations(rows).items():
+        if line in lines:
+            lines[line]["zufallsausfall"] = round((lone + 1) / (ntrips + 2), 4)
+            lines[line]["zuege"] = ntrips
     out = {
         "erstellt": datetime.now(TZ).isoformat(),
         "zeitraum": {"von": rows[0]["datum"], "bis": rows[-1]["datum"]} if rows else None,
@@ -615,6 +680,11 @@ def export_json(path, max_per_line=600):
         "puenktlichkeit": punctuality(rows),
         "stunden": by_hour(rows),
         "heatmap": {k: v for k, v in heatmap(rows).items() if k in ("S1", "S7", "RE1")},
+        # the same, only for the current week (since Monday 00:00 Berlin time)
+        "heatmap_woche": {k: v for k, v in heatmap([r for r in rows if r["geplant"] >= week_start]).items()
+                          if k in ("S1", "S7", "RE1")},
+        "woche_ab": week_start[:10],
+        "tage": len({r["datum"] for r in rows}),
         "anschluesse": connections(rows),
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
