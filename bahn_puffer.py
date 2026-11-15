@@ -55,6 +55,9 @@ from zoneinfo import ZoneInfo
 API = "https://v6.vbb.transport.rest"
 TZ = ZoneInfo("Europe/Berlin")
 LOG = Path(os.environ.get("BAHN_PUFFER_LOG", Path.home() / ".bahn_puffer" / "verspaetungen.csv"))
+# Everything is kept, one file per month next to LOG (data/verspaetungen/2026-11.csv), so no
+# single file grows too big for GitHub. An old single LOG file is split up on the next --lernen.
+ARCHIVE = LOG.with_suffix("")
 
 # Rough starting guesses per product, replaced per line by learned data.
 #   cancel: share of cancelled trains, tail: share of trains that are really late,
@@ -210,19 +213,66 @@ def is_good(s, puffer):
 LOG_FIELDS = ["key", "datum", "halt", "art", "linie", "produkt", "geplant", "verspaetung_min", "ausfall", "gleis"]
 
 
+def _month_files():
+    return sorted(ARCHIVE.glob("*.csv")) if ARCHIVE.is_dir() else []
+
+
+def _raw_rows(last_months=None):
+    """All logged rows (or only those of the last few month files), oldest first."""
+    files = _month_files()
+    if last_months:
+        files = files[-last_months:]
+    if LOG.exists():  # old single file that wasn't split up yet
+        files = [LOG] + files
+    rows = []
+    for fn in files:
+        with fn.open(newline="") as f:
+            rows += list(csv.DictReader(f))
+    return rows
+
+
+def _append(rows):
+    """Add rows to their month files (created with a header when new)."""
+    by_month = defaultdict(list)
+    for r in rows:
+        by_month[r["datum"][:7]].append(r)
+    ARCHIVE.mkdir(parents=True, exist_ok=True)
+    for month, rs in sorted(by_month.items()):
+        fn = ARCHIVE / f"{month}.csv"
+        new_file = not fn.exists()
+        with fn.open("a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=LOG_FIELDS)
+            if new_file:
+                w.writeheader()
+            w.writerows(rs)
+
+
+def _migrate():
+    """Split an old single log file into month files (once)."""
+    if not LOG.exists():
+        return
+    with LOG.open(newline="") as f:
+        old = list(csv.DictReader(f))
+    have = set()
+    for fn in _month_files():
+        with fn.open(newline="") as f:
+            have |= {r["key"] for r in csv.DictReader(f)}
+    _append([r for r in old if r["key"] not in have])
+    LOG.unlink()
+    print(f"{len(old)} alte Beobachtungen aus {LOG} in Monatsdateien unter {ARCHIVE}/ verschoben")
+
+
 def load_log():
     by_line = defaultdict(lambda: {"delays": [], "cancel": 0, "n": 0})
     seen = set()
-    if LOG.exists():
-        with LOG.open(newline="") as f:
-            for row in csv.DictReader(f):
-                seen.add(row["key"])
-                d = by_line[row["linie"]]
-                d["n"] += 1
-                if row["ausfall"] == "1":
-                    d["cancel"] += 1
-                else:
-                    d["delays"].append(float(row["verspaetung_min"]))
+    for row in _raw_rows():
+        seen.add(row["key"])
+        d = by_line[row["linie"]]
+        d["n"] += 1
+        if row["ausfall"] == "1":
+            d["cancel"] += 1
+        else:
+            d["delays"].append(float(row["verspaetung_min"]))
     return by_line, seen
 
 
@@ -395,11 +445,12 @@ def arrival_advice(js, target, reserve, puffer, pre, post, door_to, sim, levels)
 
 
 # ------------------------------------------------------------------ learning
-def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60, lookback=90):
-    """Store real delays of trains that already ran. lookback = minutes back from now;
-    longer spans are fetched in 60-minute pieces (e.g. 480 to catch up the last 8 hours)."""
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    _, seen = load_log()
+def learn(stop_names, products=("suburban", "regional", "express"), lookback=90):
+    """Store real delays of trains that already ran (all of them, nothing is deleted).
+    lookback = minutes back from now; longer spans are fetched in 60-minute pieces
+    (e.g. 480 to catch up the last 8 hours)."""
+    _migrate()
+    seen = {r["key"] for r in _raw_rows(last_months=2)}   # keys contain the date, older ones can't repeat
     now = datetime.now(TZ)
     new, failed = [], []
     for name in stop_names:
@@ -441,17 +492,8 @@ def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60
                     gleis=it.get("platform") or it.get("plannedPlatform") or "",
                 ))
             time.sleep(0.4)
-    rows = []
-    if LOG.exists():
-        with LOG.open(newline="") as f:
-            rows = list(csv.DictReader(f))
-    cutoff = (now - timedelta(days=keep_days)).date().isoformat()
-    rows = [r for r in rows if r["datum"] >= cutoff] + new
-    with LOG.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=LOG_FIELDS)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"{len(new)} neue Beobachtungen, {len(rows)} insgesamt (letzte {keep_days} Tage) in {LOG}")
+    _append(new)
+    print(f"{len(new)} neue Beobachtungen in {ARCHIVE}/ ({len(_month_files())} Monatsdateien)")
     for f in failed:
         print(f"::warning::nicht abrufbar: {f}")
     if failed and not new:
@@ -459,10 +501,7 @@ def learn(stop_names, products=("suburban", "regional", "express"), keep_days=60
 
 
 def _read_log():
-    if not LOG.exists():
-        return []
-    with LOG.open(newline="") as f:
-        return clean(list(csv.DictReader(f)))
+    return clean(_raw_rows())
 
 
 def _trip(r):
@@ -700,7 +739,7 @@ def export_json(path, max_per_line=600):
 def statistics():
     rows = _read_log()
     if not rows:
-        print(f"Noch keine Daten in {LOG}. Erst ein paar Mal --lernen laufen lassen.")
+        print(f"Noch keine Daten in {ARCHIVE}/. Erst ein paar Mal --lernen laufen lassen.")
         return
     print(f"Zeitraum {rows[0]['datum']} bis {max(r['datum'] for r in rows)}, {len(rows)} Beobachtungen\n")
     print("Puenktlichkeit (Anteil aller geplanten Zuege; Ausfaelle zaehlen als unpuenktlich)")
