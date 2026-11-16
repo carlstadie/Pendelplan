@@ -2043,7 +2043,7 @@ function renderStats() {
   $("skey").innerHTML = `<span><i class="b1"></i>bis 1 Min</span><span><i class="b3"></i>1–3 Min</span><span><i class="b5"></i>3–5 Min</span><span><i class="bl"></i>mehr als 5 Min</span><span><i class="bx"></i>fällt aus</span>`;
 
   $("x-h").textContent = dir === "out" ? "Umsteigen in Wannsee, morgens zur Charité" : "Umsteigen in Wannsee, abends nach Hause";
-  const items = Object.entries(d.anschluesse || {}).filter(([k, v]) => k.startsWith(dir + "|") && v.n >= 5)
+  const items = Object.entries(d.anschluesse || {}).filter(([k, v]) => k.startsWith(dir + "|") && v.n >= 8)
     .map(([k, v]) => { const [, lines, gap] = k.split("|"); const [f, c] = lines.split(">"); return { f, c, gap: +gap, ...v }; })
     .sort((a, b) => b.n - a.n).slice(0, 5).sort((a, b) => a.gap - b.gap);
   X.innerHTML = items.length ? items.map(x => {

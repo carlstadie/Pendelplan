@@ -657,6 +657,14 @@ def connections(rows, min_transfer=None, max_gap=16):
     their platforms (max max_gap min) counts as one possible transfer; it worked if neither
     train was cancelled and the real gap was still >= that walking time.
     Key: "out|S7>S1|2" = way there, S7 to S1, 2 min planned.
+
+    Gaps in the data: at a terminus (S1 arriving in Wannsee, S7 arriving in Potsdam) the API
+    mostly gives real-time data only when something is wrong, and rows without real time are
+    not logged. Using only the logged ones would mean counting almost only the bad cases.
+    So a missing arrival in Wannsee is estimated from the same train's departure one stop
+    group earlier (Botanischer Garten / Potsdam, nearly always logged) plus the usual
+    planned ride time, and the direction of a train leaving Wannsee is also recognised
+    without its (often missing) arrival in Potsdam.
     """
     ev = defaultdict(dict)
     for r in rows:
@@ -665,17 +673,53 @@ def connections(rows, min_transfer=None, max_gap=16):
             ev[_trip(r)][(st, r["art"])] = r
     plan = lambda r: datetime.fromisoformat(r["geplant"])
     real = lambda r: plan(r) + timedelta(minutes=float(r["verspaetung_min"]))
-    groups = {k: [] for k in ("out_feed", "out_conn", "back_feed", "back_conn")}
 
-    def leg(e, a, b, into, take):
-        if a in e and b in e and plan(e[b]) > plan(e[a]):
-            groups[into].append(e[take])
-
+    # usual planned ride time to Wannsee per line and origin, from trips that have both rows
+    rides = defaultdict(list)
     for e in ev.values():
-        leg(e, ("pdm", "dep"), ("wan", "arr"), "out_feed", ("wan", "arr"))
-        leg(e, ("wan", "dep"), ("bg", "arr"), "out_conn", ("wan", "dep"))
-        leg(e, ("bg", "dep"), ("wan", "arr"), "back_feed", ("wan", "arr"))
-        leg(e, ("wan", "dep"), ("pdm", "arr"), "back_conn", ("wan", "dep"))
+        for o in ("bg", "pdm"):
+            if (o, "dep") in e and ("wan", "arr") in e:
+                m = (plan(e[("wan", "arr")]) - plan(e[(o, "dep")])).total_seconds() / 60
+                if 0 < m < 40:
+                    rides[(e[(o, "dep")]["linie"], o)].append(m)
+    ride = {k: sorted(v)[len(v) // 2] for k, v in rides.items() if len(v) >= 3}
+
+    def arrival(e, origin):
+        """Arrival in Wannsee of a train coming from `origin` (logged, or estimated)."""
+        a, o = e.get(("wan", "arr")), e.get((origin, "dep"))
+        if a and (not o or plan(a) > plan(o)):
+            return a if o or origin == "bg" or a["linie"] != "S1" else None
+        if o and (o["linie"], origin) in ride and not (a and plan(a) <= plan(o)):
+            # S1/S7 etc. reaching Wannsee: assume the delay it had when leaving
+            t = plan(o) + timedelta(minutes=ride[(o["linie"], origin)])
+            return dict(o, halt="Wannsee (geschaetzt)", art="arr", geplant=t.isoformat(),
+                        gleis=(a or {}).get("gleis", ""))
+        return None
+
+    at_pdm = {r["linie"] for e in ev.values() for (st, _), r in e.items() if st == "pdm"}
+    groups = {k: [] for k in ("out_feed", "out_conn", "back_feed", "back_conn")}
+    for e in ev.values():
+        dep = e.get(("wan", "dep"))
+        # way there: from Potsdam to Wannsee, then on to Botanischer Garten
+        f = arrival(e, "pdm") if ("pdm", "dep") in e else None
+        if f:
+            groups["out_feed"].append(f)
+        if dep and ("bg", "arr") in e and plan(e[("bg", "arr")]) > plan(dep):
+            groups["out_conn"].append(dep)
+        # way back: from Botanischer Garten to Wannsee, then on towards Potsdam
+        f = arrival(e, "bg") if ("bg", "dep") in e else None
+        if f:
+            groups["back_feed"].append(f)
+        towards_pdm = (("pdm", "arr") in e and plan(e[("pdm", "arr")]) > plan(dep)) if dep else False
+        if dep and not towards_pdm and ("bg", "arr") not in e and ("bg", "dep") not in e:
+            # no arrival in Potsdam logged (common, it's the end of the S7): it goes that way
+            # if it did not come from Potsdam
+            towards_pdm = (dep["linie"] in at_pdm and dep["linie"] != "S1"
+                           and not (("pdm", "dep") in e and plan(e[("pdm", "dep")]) < plan(dep))
+                           and ("wan", "arr") in e    # trains starting in Wannsee go to Berlin
+                           and not (dep["linie"] == "S7" and _island(dep.get("gleis")) == "S34"))  # S7 to Berlin uses 3/4
+        if dep and towards_pdm:
+            groups["back_conn"].append(dep)
 
     res = defaultdict(lambda: {"n": 0, "ok": 0})
     for d in ("out", "back"):
