@@ -17568,3 +17568,15 @@ key,datum,halt,art,linie,produkt,geplant,verspaetung_min,ausfall,gleis
 1|132|0|86|21112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T00:18:00+01:00,0.0,0,1
 1|88|0|86|21112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T00:09:00+01:00,8.0,0,2
 1|132|0|86|21112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T00:17:00+01:00,0.0,0,1
+1|7235|0|86|21112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-22T00:36:00+01:00,1.0,0,6
+1|7231|0|86|21112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-22T00:33:00+01:00,1.0,0,4
+1|84|0|86|21112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S1,suburban,2026-11-22T00:34:00+01:00,0.0,0,3
+1|7220|7|86|21112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-22T00:37:00+01:00,2.0,0,1
+1|96769|0|86|21112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,RE7,regional,2026-11-22T00:45:00+01:00,9.0,0,6
+1|7231|0|86|21112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-22T00:32:00+01:00,0.0,0,4
+1|7220|7|86|21112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-22T00:32:00+01:00,1.0,0,1
+1|96769|0|86|21112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,RE7,regional,2026-11-22T00:43:00+01:00,10.0,0,6
+1|63|1|86|21112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T00:29:00+01:00,5.0,0,2
+1|140|1|86|21112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T00:38:00+01:00,0.0,0,1
+1|63|1|86|21112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T00:29:00+01:00,4.0,0,2
+1|140|1|86|21112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T00:37:00+01:00,0.0,0,1
