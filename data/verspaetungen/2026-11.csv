@@ -18336,3 +18336,36 @@ key,datum,halt,art,linie,produkt,geplant,verspaetung_min,ausfall,gleis
 1|436|18|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T15:39:00+01:00,2.0,0,2
 1|480|15|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T15:47:00+01:00,1.0,0,1
 1|68|24|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T15:49:00+01:00,0.0,0,2
+1|21340|0|86|22112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,ICE 544,express,2026-11-22T16:00:00+01:00,1.0,0,3
+1|7227|1|86|22112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-22T16:01:00+01:00,1.0,0,6
+1|94995|0|86|22112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,RE1,regional,2026-11-22T16:10:00+01:00,0.0,0,4
+1|7259|2|86|22112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-22T16:11:00+01:00,1.0,0,7
+1|7227|2|86|22112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-22T16:21:00+01:00,1.0,0,6
+1|96177|0|86|22112026|900230999|departures,2026-11-22,S Potsdam Hauptbahnhof,dep,RB21,regional,2026-11-22T16:23:00+01:00,0.0,0,3
+1|21451|0|86|22112026|900230999|arrivals,2026-11-22,S Potsdam Hauptbahnhof,arr,ICE 547,express,2026-11-22T15:59:00+01:00,33.0,0,4
+1|94995|0|86|22112026|900230999|arrivals,2026-11-22,S Potsdam Hauptbahnhof,arr,RE1,regional,2026-11-22T16:08:00+01:00,0.0,0,4
+1|96177|0|86|22112026|900230999|arrivals,2026-11-22,S Potsdam Hauptbahnhof,arr,RB21,regional,2026-11-22T16:20:00+01:00,0.0,0,3
+1|96177|0|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,RB21,regional,2026-11-22T16:11:00+01:00,0.0,0,5
+1|7227|1|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-22T16:12:00+01:00,2.0,0,4
+1|68|26|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S1,suburban,2026-11-22T16:14:00+01:00,0.0,0,3
+1|94995|0|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,RE1,regional,2026-11-22T16:17:00+01:00,0.0,0,6
+1|7259|2|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-22T16:22:00+01:00,1.0,0,4
+1|95037|0|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,RE1,regional,2026-11-22T16:23:00+01:00,0.0,0,5
+1|7248|0|86|22112026|900053301|departures,2026-11-22,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-22T16:23:00+01:00,1.0,0,1
+1|96177|0|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,RB21,regional,2026-11-22T16:10:00+01:00,0.0,0,5
+1|7227|1|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-22T16:12:00+01:00,0.0,0,4
+1|94995|0|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,RE1,regional,2026-11-22T16:16:00+01:00,0.0,0,6
+1|95037|0|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,RE1,regional,2026-11-22T16:21:00+01:00,-1.0,0,5
+1|7259|2|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-22T16:22:00+01:00,0.0,0,4
+1|7248|0|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-22T16:22:00+01:00,2.0,0,1
+1|96758|1|86|22112026|900053301|arrivals,2026-11-22,S Wannsee Bhf (Berlin),arr,RE7,regional,2026-11-22T16:24:00+01:00,1.0,0,6
+1|436|19|86|22112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T15:59:00+01:00,1.0,0,2
+1|138|18|86|22112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T16:18:00+01:00,0.0,1,1
+1|68|25|86|22112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T16:09:00+01:00,1.0,0,2
+1|114363|0|86|22112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,1,suburban,2026-11-22T16:18:00+01:00,2.0,0,1
+1|436|20|86|22112026|900066102|departures,2026-11-22,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-22T16:19:00+01:00,1.0,0,2
+1|436|19|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T15:59:00+01:00,0.0,0,2
+1|138|18|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T16:17:00+01:00,0.0,1,1
+1|68|25|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T16:09:00+01:00,0.0,0,2
+1|436|20|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-22T16:19:00+01:00,0.0,0,2
+1|114363|0|86|22112026|900066102|arrivals,2026-11-22,S Botanischer Garten (Berlin),arr,1,suburban,2026-11-22T16:17:00+01:00,3.0,0,1
