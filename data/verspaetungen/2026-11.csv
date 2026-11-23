@@ -19770,3 +19770,11 @@ key,datum,halt,art,linie,produkt,geplant,verspaetung_min,ausfall,gleis
 1|436|15|86|23112026|900066102|arrivals,2026-11-23,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-23T14:39:00+01:00,0.0,0,2
 1|488|25|86|23112026|900066102|arrivals,2026-11-23,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-23T14:47:00+01:00,0.0,0,1
 1|68|21|86|23112026|900066102|arrivals,2026-11-23,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-23T14:49:00+01:00,1.0,0,2
+1|3940|6|86|23112026|900230999|departures,2026-11-23,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-23T15:01:00+01:00,0.0,0,6
+1|95008|0|86|23112026|900053301|departures,2026-11-23,S Wannsee Bhf (Berlin),dep,RE1,regional,2026-11-23T14:58:00+01:00,0.0,0,6
+1|95059|0|86|23112026|900053301|departures,2026-11-23,S Wannsee Bhf (Berlin),dep,RE1,regional,2026-11-23T15:01:00+01:00,-2.0,0,5
+1|95059|0|86|23112026|900053301|arrivals,2026-11-23,S Wannsee Bhf (Berlin),arr,RE1,regional,2026-11-23T15:00:00+01:00,-1.0,0,5
+1|138|14|86|23112026|900066102|departures,2026-11-23,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-23T14:58:00+01:00,0.0,0,1
+1|436|16|86|23112026|900066102|departures,2026-11-23,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-23T14:59:00+01:00,1.0,0,2
+1|138|14|86|23112026|900066102|arrivals,2026-11-23,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-23T14:57:00+01:00,0.0,0,1
+1|436|16|86|23112026|900066102|arrivals,2026-11-23,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-23T14:59:00+01:00,0.0,0,2
