@@ -20642,3 +20642,4 @@ key,datum,halt,art,linie,produkt,geplant,verspaetung_min,ausfall,gleis
 1|74|0|86|24112026|900066102|arrivals,2026-11-24,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-24T06:09:00+01:00,0.0,0,2
 1|130|3|86|24112026|900066102|arrivals,2026-11-24,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-24T06:17:00+01:00,0.0,0,1
 1|437|2|86|24112026|900066102|arrivals,2026-11-24,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-24T06:19:00+01:00,0.0,0,2
+1|24470|0|86|24112026|900053301|departures,2026-11-24,S Wannsee Bhf (Berlin),dep,RB37,regional,2026-11-24T06:46:00+01:00,0.0,1,8
