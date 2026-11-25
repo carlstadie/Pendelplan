@@ -23568,3 +23568,31 @@ key,datum,halt,art,linie,produkt,geplant,verspaetung_min,ausfall,gleis
 1|106048|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,1,suburban,2026-11-25T22:36:00+01:00,6.0,0,1
 1|437|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T22:39:00+01:00,12.0,0,2
 1|6|2|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T22:49:00+01:00,10.0,0,2
+1|3817|2|86|25112026|900230999|departures,2026-11-25,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-25T23:01:00+01:00,1.0,0,7
+1|3817|3|86|25112026|900230999|departures,2026-11-25,S Potsdam Hauptbahnhof,dep,S7,suburban,2026-11-25T23:21:00+01:00,1.0,0,6
+1|86097|0|86|25112026|900230999|departures,2026-11-25,S Potsdam Hauptbahnhof,dep,RE1,regional,2026-11-25T23:24:00+01:00,0.0,0,3
+1|106331|0|86|25112026|900230999|arrivals,2026-11-25,S Potsdam Hauptbahnhof,arr,ICE 945,express,2026-11-25T23:00:00+01:00,137.0,0,4
+1|106332|0|86|25112026|900230999|arrivals,2026-11-25,S Potsdam Hauptbahnhof,arr,ICE 955,express,2026-11-25T23:00:00+01:00,137.0,0,4
+1|86097|0|86|25112026|900230999|arrivals,2026-11-25,S Potsdam Hauptbahnhof,arr,RE1,regional,2026-11-25T23:22:00+01:00,0.0,0,3
+1|3817|2|86|25112026|900053301|departures,2026-11-25,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-25T23:13:00+01:00,1.0,0,4
+1|86097|0|86|25112026|900053301|departures,2026-11-25,S Wannsee Bhf (Berlin),dep,RE1,regional,2026-11-25T23:16:00+01:00,0.0,0,5
+1|3765|1|86|25112026|900053301|departures,2026-11-25,S Wannsee Bhf (Berlin),dep,S7,suburban,2026-11-25T23:17:00+01:00,1.0,0,1
+1|26|0|86|25112026|900053301|departures,2026-11-25,S Wannsee Bhf (Berlin),dep,S1,suburban,2026-11-25T23:14:00+01:00,6.0,0,3
+1|90|0|86|25112026|900053301|arrivals,2026-11-25,S Wannsee Bhf (Berlin),arr,S1,suburban,2026-11-25T22:56:00+01:00,0.0,1,2
+1|3765|1|86|25112026|900053301|arrivals,2026-11-25,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-25T23:12:00+01:00,0.0,0,1
+1|3817|2|86|25112026|900053301|arrivals,2026-11-25,S Wannsee Bhf (Berlin),arr,S7,suburban,2026-11-25T23:12:00+01:00,1.0,0,4
+1|86097|0|86|25112026|900053301|arrivals,2026-11-25,S Wannsee Bhf (Berlin),arr,RE1,regional,2026-11-25T23:14:00+01:00,0.0,0,5
+1|87643|0|86|25112026|900053301|arrivals,2026-11-25,S Wannsee Bhf (Berlin),arr,RE7,regional,2026-11-25T23:24:00+01:00,0.0,0,6
+1|64|0|86|25112026|900053301|arrivals,2026-11-25,S Wannsee Bhf (Berlin),arr,S1,suburban,2026-11-25T23:16:00+01:00,19.0,0,3
+1|64|0|86|25112026|900066102|departures,2026-11-25,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-25T22:58:00+01:00,11.0,0,1
+1|440|0|86|25112026|900066102|departures,2026-11-25,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-25T22:59:00+01:00,12.0,0,2
+1|438|0|86|25112026|900066102|departures,2026-11-25,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-25T23:19:00+01:00,0.0,1,2
+1|473|0|86|25112026|900066102|departures,2026-11-25,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-25T23:08:00+01:00,3.0,0,1
+1|90|1|86|25112026|900066102|departures,2026-11-25,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-25T23:18:00+01:00,0.0,0,1
+1|11|0|86|25112026|900066102|departures,2026-11-25,S Botanischer Garten (Berlin),dep,S1,suburban,2026-11-25T23:09:00+01:00,15.0,0,2
+1|64|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T22:57:00+01:00,11.0,0,1
+1|440|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T22:59:00+01:00,11.0,0,2
+1|438|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T23:19:00+01:00,0.0,1,2
+1|473|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T23:07:00+01:00,4.0,0,1
+1|90|1|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T23:17:00+01:00,0.0,0,1
+1|11|0|86|25112026|900066102|arrivals,2026-11-25,S Botanischer Garten (Berlin),arr,S1,suburban,2026-11-25T23:09:00+01:00,14.0,0,2
